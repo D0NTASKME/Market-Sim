@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
+struct DepthLevel { int64_t price; int64_t qty; int64_t mine; };
+
 struct Position { int64_t inventory = 0; double cash = 0.0; };
 struct SimEvent {
     double time; size_t agent_index;
@@ -21,7 +23,12 @@ class Market {
 public:
     Market(uint32_t seed, double fundamental_start, double fundamental_vol);
     void add_agent(std::unique_ptr<Agent> a);
-    void run(double duration);
+    void run(double duration);        // start and run to `duration` in one go
+    void start();                     // seed the event queue; idempotent
+    void run_until(double until);     // advance to `until`; safe to call repeatedly
+
+    // Up to n price levels from the touch outward, with the maker's share.
+    std::vector<DepthLevel> depth(Side side, size_t n) const;
 
     double time() const { return now_; }
     double fundamental() const { return fundamental_; }
@@ -72,6 +79,7 @@ private:
     std::unordered_map<uint64_t, OrderInfo> order_owner_;
     uint64_t next_order_id_ = 1;
     uint64_t tracked_ = 0;
+    bool started_ = false;
     uint64_t maker_id_ = 0;
     std::set<uint64_t> informed_ids_;
     double maker_vs_informed_ = 0.0;

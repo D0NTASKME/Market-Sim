@@ -1,0 +1,817 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Who pays the market maker?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #EDF0F2; --panel: #F7F8F9; --ink: #15202B; --muted: #5A6875;
+  --rule: #CDD5DB; --maker: #1C6E75; --informed: #B7811A; --ask: #56637A;
+  --maker-soft: rgba(28,110,117,.16); --ask-soft: rgba(86,99,122,.16);
+  --focus: #1C6E75;
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #10161C; --panel: #161E26; --ink: #E3E8EC; --muted: #93A1AD;
+    --rule: #2A3642; --maker: #4FB3BB; --informed: #E0A93A; --ask: #8A98B0;
+    --maker-soft: rgba(79,179,187,.2); --ask-soft: rgba(138,152,176,.2); --focus: #4FB3BB;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #10161C; --panel: #161E26; --ink: #E3E8EC; --muted: #93A1AD;
+  --rule: #2A3642; --maker: #4FB3BB; --informed: #E0A93A; --ask: #8A98B0;
+  --maker-soft: rgba(79,179,187,.2); --ask-soft: rgba(138,152,176,.2); --focus: #4FB3BB;
+}
+*, *::before, *::after { box-sizing: inherit; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: "Archivo", "Helvetica Neue", Arial, system-ui, sans-serif;
+  font-variation-settings: "wdth" 100; line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 64px; }
+h1 {
+  font-size: clamp(2.3rem, 6vw, 4.6rem); line-height: .95; margin: 0 0 20px;
+  font-weight: 850; font-variation-settings: "wdth" 125; letter-spacing: -0.02em;
+  max-width: 14ch;
+}
+.lede { font-size: 1.15rem; max-width: 60ch; margin: 0 0 36px; color: var(--ink); }
+.lede span.informed { color: var(--informed); font-weight: 600; }
+.lede span.maker { color: var(--maker); font-weight: 600; }
+
+/* The slider is the one bold element on the page. */
+.control { margin: 0 0 28px; }
+.control label { display: block; font-weight: 700; font-size: 1.05rem; margin-bottom: 6px; }
+.readout {
+  font-variation-settings: "wdth" 75; font-variant-numeric: tabular-nums;
+  font-size: clamp(2rem, 5vw, 3.2rem); font-weight: 800; color: var(--informed); line-height: 1;
+}
+.readout small { font-size: .4em; font-weight: 500; color: var(--muted); margin-left: .4em; font-variation-settings: "wdth" 100; }
+input[type=range] {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 44px; background: transparent; margin: 8px 0 0;
+}
+input[type=range]::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: linear-gradient(to right, var(--informed) var(--fill,25%), var(--rule) var(--fill,25%)); }
+input[type=range]::-moz-range-track { height: 10px; border-radius: 5px; background: var(--rule); }
+input[type=range]::-moz-range-progress { height: 10px; border-radius: 5px; background: var(--informed); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 30px; height: 30px; margin-top: -10px; border-radius: 50%; background: var(--ink); border: 4px solid var(--paper); box-shadow: 0 0 0 2px var(--ink); cursor: grab; }
+input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); border: 4px solid var(--paper); box-shadow: 0 0 0 2px var(--ink); cursor: grab; }
+.scale { display: flex; justify-content: space-between; color: var(--muted); font-size: .85rem; }
+
+.bar { display: flex; flex-wrap: wrap; gap: 18px 28px; align-items: end; margin: 0 0 24px; padding: 16px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.bar fieldset { border: 0; margin: 0; padding: 0; }
+.bar legend, .bar .lab { font-size: .85rem; color: var(--muted); margin-bottom: 6px; padding: 0; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.seg label { position: relative; }
+.seg input { position: absolute; opacity: 0; inset: 0; }
+.seg span { display: block; padding: 8px 12px; font-size: .92rem; cursor: pointer; background: var(--panel); }
+.seg label + label span { border-left: 1px solid var(--rule); }
+.seg input:checked + span { background: var(--ink); color: var(--paper); }
+.seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: -2px; }
+button, select {
+  font: inherit; font-size: .92rem; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 8px 14px; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.clock { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted); font-size: .9rem; text-align: right; }
+.clock b { color: var(--ink); font-weight: 700; }
+
+.grid { display: grid; grid-template-columns: 250px 1fr; gap: 20px; }
+.stack { display: grid; gap: 20px; min-width: 0; }
+.panel { background: var(--panel); border-radius: 4px; padding: 16px 18px 12px; min-width: 0; }
+.panel h2 { font-size: .98rem; font-weight: 700; margin: 0 0 2px; }
+.panel .sub { font-size: .85rem; color: var(--muted); margin: 0 0 10px; }
+.key { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: .85rem; color: var(--muted); margin: 0 0 8px; }
+.key i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 6px; border-radius: 2px; }
+.key i.dash { background: repeating-linear-gradient(to right, currentColor 0 4px, transparent 4px 7px) !important; height: 2px; }
+canvas { display: block; width: 100%; }
+
+.ladder { font-variant-numeric: tabular-nums; font-variation-settings: "wdth" 80; font-size: .9rem; }
+.row { display: grid; grid-template-columns: 58px 1fr; align-items: center; height: 22px; gap: 8px; }
+.row .p { text-align: right; color: var(--muted); }
+.row .b { position: relative; height: 16px; }
+.row .b i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; }
+.row .b em { position: absolute; left: 6px; top: 0; font-style: normal; font-size: .78rem; line-height: 16px; color: var(--ink); }
+.spread { text-align: center; color: var(--muted); font-size: .8rem; padding: 6px 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 4px 0; }
+
+.figures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; font-variant-numeric: tabular-nums; }
+.fig { font-size: .82rem; color: var(--muted); }
+.fig b { display: block; font-size: 1.35rem; color: var(--ink); font-variation-settings: "wdth" 80; font-weight: 700; }
+.fig b.pos { color: var(--maker); } .fig b.neg { color: var(--informed); }
+
+.lower { display: grid; grid-template-columns: 1fr 1.4fr; gap: 20px; margin-top: 20px; }
+.prose { max-width: 66ch; margin-top: 48px; }
+.prose h2 { font-size: 1.5rem; font-variation-settings: "wdth" 115; font-weight: 800; margin: 0 0 12px; }
+.prose h3 { font-size: 1.05rem; margin: 28px 0 6px; }
+.prose p { margin: 0 0 14px; }
+.prose a { color: var(--maker); }
+.note { font-size: .88rem; color: var(--muted); }
+
+@media (max-width: 560px) {
+  .seg { display: grid; width: 100%; }
+  .seg label + label span { border-left: 0; border-top: 1px solid var(--rule); }
+  .bar fieldset { width: 100%; }
+}
+@media (max-width: 860px) {
+  .grid, .lower { grid-template-columns: 1fr; }
+  .figures { grid-template-columns: repeat(2, 1fr); }
+  .clock { margin-left: 0; text-align: left; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Who pays the market maker?</h1>
+  <p class="lede">A <span class="maker">market maker</span> stands ready to buy and sell, earning a small spread from everyone who trades with it. Most traders are just trading. A few know where the price is going. Move the slider and watch what <span class="informed">their knowledge</span> costs.</p>
+
+  <div class="control">
+    <label for="rate">How often the informed trader checks the price</label>
+    <div class="readout" id="rateOut">5<small>checks a second</small></div>
+    <input type="range" id="rate" min="0" max="20" step="1" value="5" aria-describedby="rateScale">
+    <div class="scale" id="rateScale"><span>Never</span><span>20 times a second</span></div>
+  </div>
+
+  <div class="bar">
+    <fieldset>
+      <legend>Market maker strategy</legend>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="maker" value="naive"><span>Fixed quotes</span></label>
+        <label><input type="radio" name="maker" value="skewed" checked><span>Leans against inventory</span></label>
+        <label><input type="radio" name="maker" value="as"><span>Avellaneda–Stoikov</span></label>
+      </div>
+    </fieldset>
+    <div>
+      <div class="lab">Speed</div>
+      <select id="speed" aria-label="Simulation speed">
+        <option value="5">5× real time</option>
+        <option value="30" selected>30× real time</option>
+        <option value="100">100× real time</option>
+      </select>
+    </div>
+    <div>
+      <div class="lab">&nbsp;</div>
+      <button id="play" type="button">Pause</button>
+      <button id="restart" type="button">Restart episode</button>
+    </div>
+    <div class="clock">Episode <b id="epNum">1</b><br><b id="clock">0</b> of 300 simulated seconds<br><span id="engine">Loading engine…</span></div>
+  </div>
+
+  <div class="grid">
+    <section class="panel" aria-labelledby="bookTitle">
+      <h2 id="bookTitle">Order book</h2>
+      <p class="sub">Resting orders at each price. <span style="color:var(--maker)">Teal</span> is the market maker's own quote.</p>
+      <div class="ladder" id="asks"></div>
+      <div class="spread" id="spread">—</div>
+      <div class="ladder" id="bids"></div>
+    </section>
+
+    <div class="stack">
+      <section class="panel" aria-labelledby="priceTitle">
+        <h2 id="priceTitle">Traded price and fair value</h2>
+        <div class="key"><span><i style="background:var(--ink)"></i>Traded price</span><span style="color:var(--informed)"><i class="dash"></i>Fair value, which only the informed trader can see</span></div>
+        <canvas id="price" height="190" role="img" aria-label="Traded price and fair value over the current episode"></canvas>
+      </section>
+      <section class="panel" aria-labelledby="edgeTitle">
+        <h2 id="edgeTitle">What the market maker earned and lost</h2>
+        <div class="key">
+          <span style="color:var(--maker)"><i style="background:var(--maker)"></i>Earned from uninformed traders</span>
+          <span style="color:var(--informed)"><i style="background:var(--informed)"></i>Lost to the informed trader</span>
+          <span><i style="background:var(--ink)"></i>Net</span>
+        </div>
+        <canvas id="edge" height="210" role="img" aria-label="Market maker's cumulative trading edge split by counterparty"></canvas>
+        <div class="figures" aria-live="polite">
+          <div class="fig">From uninformed<b class="pos" id="fNoise">0</b></div>
+          <div class="fig">To informed<b class="neg" id="fInf">0</b></div>
+          <div class="fig">Net edge<b id="fNet">0</b></div>
+          <div class="fig">Inventory<b id="fInv">0</b></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="lower">
+    <section class="panel" aria-labelledby="invTitle">
+      <h2 id="invTitle">Market maker inventory</h2>
+      <p class="sub">Units held. Far from zero means exposed to the next price move.</p>
+      <canvas id="inv" height="170" role="img" aria-label="Market maker inventory over the current episode"></canvas>
+    </section>
+    <section class="panel" aria-labelledby="epTitle">
+      <h2 id="epTitle">Every finished episode</h2>
+      <p class="sub">Final profit, marked to fair value, against how often the informed trader was checking. Leave it running and the pattern appears.</p>
+      <div class="key">
+        <span><svg width="12" height="12" aria-hidden="true" style="vertical-align:-1px;margin-right:6px"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Fixed quotes</span>
+        <span><svg width="12" height="12" aria-hidden="true" style="vertical-align:-1px;margin-right:6px"><rect x="1.5" y="1.5" width="9" height="9" fill="currentColor"/></svg>Leans against inventory</span>
+        <span><svg width="12" height="12" aria-hidden="true" style="vertical-align:-1px;margin-right:6px"><path d="M6 1 L11 11 L1 11 Z" fill="currentColor"/></svg>Avellaneda–Stoikov</span>
+      </div>
+      <canvas id="eps" height="230" role="img" aria-label="Scatter of each finished episode's profit against informed trading intensity"></canvas>
+      <p class="note" id="epsNote">No episodes finished yet.</p>
+    </section>
+  </div>
+
+  <article class="prose">
+    <h2>What's happening</h2>
+    <p>Ten uninformed traders buy and sell at random around the current price. One market maker quotes a price to buy just below it and a price to sell just above, twenty times a second, and pockets the difference. Against random flow that is a steady business, which is why the teal line climbs.</p>
+    <p>The informed trader sees the asset's true value, the dashed line, before the market does. The slider sets how often it looks. It only trades when the price is wrong, and it always trades in the direction the price is about to move. So every time it trades with the market maker, the market maker has just sold too cheaply or bought too dearly. That loss is the ochre line, and it is called <em>adverse selection</em>.</p>
+    <p>Turn the slider up and the ochre line falls faster while the teal line barely changes. The market maker earns the same from uninformed traders whatever you do; what varies is how much it gives away. Somewhere past a few checks a second, the spread stops covering the losses.</p>
+
+    <h3>The three strategies</h3>
+    <p><strong>Fixed quotes</strong> always centres on the current price. It has no way to get rid of a position, so its inventory drifts and its final profit varies wildly from episode to episode. Watch how spread out its circles are.</p>
+    <p><strong>Leans against inventory</strong> shifts both quotes down when it is long and up when it is short, so it becomes a keener seller exactly when it holds too much. Its inventory stays near zero.</p>
+    <p><strong>Avellaneda–Stoikov</strong> is the standard textbook model of optimal market making. It derives both the shift and the width of its quotes from risk aversion, volatility and time remaining. In this market it performs about as well as the hand-tuned version, not better, because its derivation assumes there is no informed trading at all.</p>
+
+    <h3>How it's built</h3>
+    <p class="note">This page runs an event-driven C++ simulator compiled to WebAssembly, so the model in your browser is the same code as the experiments. If a browser can't run WebAssembly it falls back to an equivalent JavaScript port, and says so under the episode counter. The model: a limit order book with price-time priority, Poisson order arrivals, and a fair value that follows a random walk. Each episode is 300 simulated seconds. The market maker's fills are valued against fair value at the moment they happen, which is how its profit is split between the two groups of traders. The full model, experiments and results are on <a href="https://github.com/D0NTASKME">GitHub</a>.</p>
+  </article>
+</div>
+
+<script>
+// ---- Market simulator: a JavaScript port of the C++ model ----------------
+// Same agents, same parameters, same accounting. Mark to fair value, and
+// attribute each of the maker's fills to the counterparty that caused it.
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+class Rng {
+  constructor(seed) { this.u = mulberry32(seed); this.spare = null; }
+  uniform() { return this.u(); }
+  int(lo, hi) { return lo + Math.floor(this.u() * (hi - lo + 1)); }
+  exp(rate) { return -Math.log(1 - this.u()) / rate; }
+  normal() {
+    if (this.spare !== null) { const s = this.spare; this.spare = null; return s; }
+    let u, v, s;
+    do { u = this.u() * 2 - 1; v = this.u() * 2 - 1; s = u * u + v * v; } while (s === 0 || s >= 1);
+    const m = Math.sqrt(-2 * Math.log(s) / s);
+    this.spare = v * m;
+    return u * m;
+  }
+}
+
+class Heap {
+  constructor() { this.a = []; }
+  get size() { return this.a.length; }
+  peek() { return this.a[0]; }
+  push(x) {
+    const a = this.a; a.push(x);
+    let i = a.length - 1;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (a[p].t <= a[i].t) break;
+      [a[p], a[i]] = [a[i], a[p]]; i = p;
+    }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) {
+      a[0] = last;
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let m = i;
+        if (l < a.length && a[l].t < a[m].t) m = l;
+        if (r < a.length && a[r].t < a[m].t) m = r;
+        if (m === i) break;
+        [a[m], a[i]] = [a[i], a[m]]; i = m;
+      }
+    }
+    return top;
+  }
+}
+
+// Price-time priority book. Levels are FIFO arrays with a moving head, so a
+// fill is O(1); cancelled orders are zeroed and skipped rather than spliced.
+class Book {
+  constructor(onTrade) {
+    this.bids = new Map(); this.asks = new Map();
+    this.bestBid = -Infinity; this.bestAsk = Infinity;
+    this.index = new Map();
+    this.onTrade = onTrade;
+  }
+  level(side, price) {
+    const m = side === 'buy' ? this.bids : this.asks;
+    let l = m.get(price);
+    if (!l) { l = { orders: [], head: 0, qty: 0 }; m.set(price, l); }
+    return l;
+  }
+  front(l) {
+    while (l.head < l.orders.length && l.orders[l.head].qty === 0) l.head++;
+    if (l.head > 64 && l.head * 2 > l.orders.length) { l.orders = l.orders.slice(l.head); l.head = 0; }
+    return l.head < l.orders.length ? l.orders[l.head] : null;
+  }
+  advanceAsk() {
+    if (this.asks.size === 0) { this.bestAsk = Infinity; return; }
+    while (!this.asks.has(this.bestAsk)) this.bestAsk++;
+  }
+  advanceBid() {
+    if (this.bids.size === 0) { this.bestBid = -Infinity; return; }
+    while (!this.bids.has(this.bestBid)) this.bestBid--;
+  }
+  add(o) {
+    if (o.side === 'buy') {
+      while (o.qty > 0 && this.bestAsk <= o.price) {
+        const p = this.bestAsk, l = this.asks.get(p), r = this.front(l);
+        const q = Math.min(r.qty, o.qty);
+        this.onTrade(r, o, p, q);
+        r.qty -= q; o.qty -= q; l.qty -= q;
+        if (r.qty === 0) this.index.delete(r.id);
+        if (l.qty === 0) { this.asks.delete(p); this.advanceAsk(); }
+      }
+      if (o.qty > 0) {
+        const l = this.level('buy', o.price);
+        l.orders.push(o); l.qty += o.qty; this.index.set(o.id, o);
+        if (o.price > this.bestBid) this.bestBid = o.price;
+      }
+    } else {
+      while (o.qty > 0 && this.bestBid >= o.price) {
+        const p = this.bestBid, l = this.bids.get(p), r = this.front(l);
+        const q = Math.min(r.qty, o.qty);
+        this.onTrade(r, o, p, q);
+        r.qty -= q; o.qty -= q; l.qty -= q;
+        if (r.qty === 0) this.index.delete(r.id);
+        if (l.qty === 0) { this.bids.delete(p); this.advanceBid(); }
+      }
+      if (o.qty > 0) {
+        const l = this.level('sell', o.price);
+        l.orders.push(o); l.qty += o.qty; this.index.set(o.id, o);
+        if (o.price < this.bestAsk) this.bestAsk = o.price;
+      }
+    }
+  }
+  cancel(id) {
+    const o = this.index.get(id);
+    if (!o) return false;
+    const m = o.side === 'buy' ? this.bids : this.asks;
+    const l = m.get(o.price);
+    l.qty -= o.qty; o.qty = 0; this.index.delete(id);
+    if (l.qty === 0) {
+      m.delete(o.price);
+      if (o.side === 'buy' && o.price === this.bestBid) this.advanceBid();
+      if (o.side === 'sell' && o.price === this.bestAsk) this.advanceAsk();
+    }
+    return true;
+  }
+  // Up to n non-empty levels from the touch outward, with the maker's share.
+  depth(side, n, makerId) {
+    const out = [], m = side === 'buy' ? this.bids : this.asks;
+    let p = side === 'buy' ? this.bestBid : this.bestAsk;
+    if (!isFinite(p)) return out;
+    const step = side === 'buy' ? -1 : 1;
+    for (let k = 0; k < 400 && out.length < n; k++, p += step) {
+      const l = m.get(p);
+      if (!l || l.qty === 0) continue;
+      let mine = 0;
+      for (let i = l.head; i < l.orders.length; i++) if (l.orders[i].owner === makerId) mine += l.orders[i].qty;
+      out.push({ price: p, qty: l.qty, mine });
+    }
+    return out;
+  }
+}
+
+const MAKERS = {
+  naive:  { label: 'Fixed quotes' },
+  skewed: { label: 'Leans against inventory' },
+  as:     { label: 'Avellaneda–Stoikov' },
+};
+
+class Market {
+  constructor({ seed, maker, informedRate, horizon = 300 }) {
+    this.rng = new Rng(seed);
+    this.t = 0; this.horizon = horizon;
+    this.fundamental = 10100; this.vol = 2.0;
+    this.nextId = 1;
+    this.pos = new Map();
+    this.heap = new Heap();
+    this.book = new Book((r, i, p, q) => this.onTrade(r, i, p, q));
+    this.makerId = 100; this.informedId = 200;
+    this.makerKind = maker;
+    this.informedRate = informedRate;
+    this.edgeNoise = 0; this.edgeInformed = 0;
+    this.rateTime = 0;   // integral of informed rate over time, for the episode average
+    this.liveQuotes = [];
+    this.agents = [];
+    for (let i = 1; i <= 10; i++) this.addAgent({ id: i, kind: 'noise', rate: 2 });
+    this.addAgent({ id: this.makerId, kind: 'maker', rate: 20 });
+    // The informed trader wakes at a fixed rate of 20 and acts with
+    // probability informedRate/20. Poisson thinning: exact, and it lets the
+    // slider change the rate mid-run without rescheduling anything.
+    this.addAgent({ id: this.informedId, kind: 'informed', rate: 20 });
+    for (const a of this.agents) this.heap.push({ t: this.rng.exp(a.rate), a });
+    this.samples = [];
+    this.nextSample = 1;
+  }
+  addAgent(a) { this.agents.push(a); this.pos.set(a.id, { inv: 0, cash: 0 }); }
+  mid() {
+    const b = this.book.bestBid, a = this.book.bestAsk;
+    if (isFinite(b) && isFinite(a)) return (b + a) / 2;
+    if (isFinite(b)) return b;
+    if (isFinite(a)) return a;
+    return this.fundamental;
+  }
+  submit(side, price, qty, owner) {
+    const o = { id: this.nextId++, side, price, qty, owner };
+    this.book.add(o);
+    return o.id;
+  }
+  onTrade(resting, incoming, price, q) {
+    const buyer = incoming.side === 'buy' ? incoming.owner : resting.owner;
+    const seller = incoming.side === 'buy' ? resting.owner : incoming.owner;
+    const pb = this.pos.get(buyer), ps = this.pos.get(seller);
+    pb.inv += q; pb.cash -= price * q;
+    ps.inv -= q; ps.cash += price * q;
+    // Value each maker fill against fair value at the moment it happens.
+    if (buyer === this.makerId || seller === this.makerId) {
+      const other = buyer === this.makerId ? seller : buyer;
+      const edge = (buyer === this.makerId ? this.fundamental - price : price - this.fundamental) * q;
+      if (other === this.informedId) this.edgeInformed += edge; else this.edgeNoise += edge;
+    }
+  }
+  pnl() { const p = this.pos.get(this.makerId); return p.cash + p.inv * this.fundamental; }
+  inventory() { return this.pos.get(this.makerId).inv; }
+
+  actNoise(a) {
+    const r = this.rng, side = r.uniform() < 0.5 ? 'buy' : 'sell';
+    const mid = Math.round(this.mid()), spread = 5;
+    let price;
+    if (r.uniform() < 0.2) price = side === 'buy' ? mid + spread : mid - spread;
+    else price = side === 'buy' ? mid - 1 - r.int(0, spread) : mid + 1 + r.int(0, spread);
+    this.submit(side, price, r.int(1, 100), a.id);
+  }
+  actMaker() {
+    for (const id of this.liveQuotes) this.book.cancel(id);
+    this.liveQuotes = [];
+    const inv = this.inventory(), mid = this.mid();
+    let ref = mid, hs = 1;
+    if (this.makerKind === 'skewed') ref = mid - 0.005 * inv;
+    if (this.makerKind === 'as') {
+      const g = 5e-6, s = this.vol, k = 1, left = Math.max(0, this.horizon - this.t);
+      ref = mid - inv * g * s * s * left;
+      hs = (g * s * s * left + (2 / g) * Math.log(1 + g / k)) / 2;
+    }
+    hs = Math.max(1, hs);
+    const bid = Math.floor(ref - hs);
+    let ask = Math.ceil(ref + hs);
+    if (ask <= bid) ask = bid + 1;
+    if (inv < 2000)  this.liveQuotes.push(this.submit('buy', bid, 50, this.makerId));
+    if (inv > -2000) this.liveQuotes.push(this.submit('sell', ask, 50, this.makerId));
+  }
+  actInformed() {
+    if (this.rng.uniform() >= this.informedRate / 20) return;
+    const fair = this.fundamental, mid = this.mid();
+    if (Math.abs(fair - mid) < 3) return;
+    const inv = this.pos.get(this.informedId).inv;
+    if (fair > mid) { if (inv < 5000) this.submit('buy', Math.round(fair) + 10, 200, this.informedId); }
+    else            { if (inv > -5000) this.submit('sell', Math.round(fair) - 10, 200, this.informedId); }
+  }
+
+  // Advance to time `until` (capped at the horizon). Returns true once finished.
+  runTo(until) {
+    until = Math.min(until, this.horizon);
+    while (this.heap.size && this.heap.peek().t <= until) {
+      const e = this.heap.pop();
+      const dt = e.t - this.t;
+      this.rateTime += this.informedRate * dt;
+      this.t = e.t;
+      this.fundamental += this.vol * Math.sqrt(dt) * this.rng.normal();
+      while (this.nextSample <= this.t) { this.sample(); this.nextSample += 1; }
+      const a = e.a;
+      if (a.kind === 'noise') this.actNoise(a);
+      else if (a.kind === 'maker') this.actMaker();
+      else this.actInformed();
+      this.heap.push({ t: this.t + this.rng.exp(a.rate), a });
+    }
+    if (until >= this.horizon) {
+      this.rateTime += this.informedRate * (this.horizon - this.t);
+      this.t = this.horizon;
+      while (this.nextSample <= this.horizon) { this.sample(); this.nextSample += 1; }
+      return true;
+    }
+    this.rateTime += this.informedRate * (until - this.t);
+    this.t = until;
+    return false;
+  }
+  sample() {
+    this.samples.push({
+      t: this.nextSample, mid: this.mid(), fair: this.fundamental,
+      noise: this.edgeNoise, informed: this.edgeInformed,
+      inv: this.inventory(), pnl: this.pnl(),
+    });
+  }
+  averageRate() { return this.t > 0 ? this.rateTime / this.t : this.informedRate; }
+}
+
+
+
+
+</script>
+<script>
+
+var createSim = (() => {
+  var _scriptDir = typeof document !== 'undefined' && document.currentScript ? document.currentScript.src : undefined;
+  if (typeof __filename !== 'undefined') _scriptDir = _scriptDir || __filename;
+  return (
+function(createSim) {
+  createSim = createSim || {};
+
+var Module=typeof createSim!="undefined"?createSim:{};var readyPromiseResolve,readyPromiseReject;Module["ready"]=new Promise(function(resolve,reject){readyPromiseResolve=resolve;readyPromiseReject=reject});var moduleOverrides=Object.assign({},Module);var arguments_=[];var thisProgram="./this.program";var quit_=(status,toThrow)=>{throw toThrow};var ENVIRONMENT_IS_WEB=typeof window=="object";var ENVIRONMENT_IS_WORKER=typeof importScripts=="function";var ENVIRONMENT_IS_NODE=typeof process=="object"&&typeof process.versions=="object"&&typeof process.versions.node=="string";var scriptDirectory="";function locateFile(path){if(Module["locateFile"]){return Module["locateFile"](path,scriptDirectory)}return scriptDirectory+path}var read_,readAsync,readBinary,setWindowTitle;function logExceptionOnExit(e){if(e instanceof ExitStatus)return;let toLog=e;err("exiting due to exception: "+toLog)}var fs;var nodePath;var requireNodeFS;if(ENVIRONMENT_IS_NODE){if(ENVIRONMENT_IS_WORKER){scriptDirectory=require("path").dirname(scriptDirectory)+"/"}else{scriptDirectory=__dirname+"/"}requireNodeFS=(()=>{if(!nodePath){fs=require("fs");nodePath=require("path")}});read_=function shell_read(filename,binary){var ret=tryParseAsDataURI(filename);if(ret){return binary?ret:ret.toString()}requireNodeFS();filename=nodePath["normalize"](filename);return fs.readFileSync(filename,binary?undefined:"utf8")};readBinary=(filename=>{var ret=read_(filename,true);if(!ret.buffer){ret=new Uint8Array(ret)}return ret});readAsync=((filename,onload,onerror)=>{var ret=tryParseAsDataURI(filename);if(ret){onload(ret)}requireNodeFS();filename=nodePath["normalize"](filename);fs.readFile(filename,function(err,data){if(err)onerror(err);else onload(data.buffer)})});if(process["argv"].length>1){thisProgram=process["argv"][1].replace(/\\/g,"/")}arguments_=process["argv"].slice(2);process["on"]("uncaughtException",function(ex){if(!(ex instanceof ExitStatus)){throw ex}});process["on"]("unhandledRejection",function(reason){throw reason});quit_=((status,toThrow)=>{if(keepRuntimeAlive()){process["exitCode"]=status;throw toThrow}logExceptionOnExit(toThrow);process["exit"](status)});Module["inspect"]=function(){return"[Emscripten Module object]"}}else if(ENVIRONMENT_IS_WEB||ENVIRONMENT_IS_WORKER){if(ENVIRONMENT_IS_WORKER){scriptDirectory=self.location.href}else if(typeof document!="undefined"&&document.currentScript){scriptDirectory=document.currentScript.src}if(_scriptDir){scriptDirectory=_scriptDir}if(scriptDirectory.indexOf("blob:")!==0){scriptDirectory=scriptDirectory.substr(0,scriptDirectory.replace(/[?#].*/,"").lastIndexOf("/")+1)}else{scriptDirectory=""}{read_=(url=>{try{var xhr=new XMLHttpRequest;xhr.open("GET",url,false);xhr.send(null);return xhr.responseText}catch(err){var data=tryParseAsDataURI(url);if(data){return intArrayToString(data)}throw err}});if(ENVIRONMENT_IS_WORKER){readBinary=(url=>{try{var xhr=new XMLHttpRequest;xhr.open("GET",url,false);xhr.responseType="arraybuffer";xhr.send(null);return new Uint8Array(xhr.response)}catch(err){var data=tryParseAsDataURI(url);if(data){return data}throw err}})}readAsync=((url,onload,onerror)=>{var xhr=new XMLHttpRequest;xhr.open("GET",url,true);xhr.responseType="arraybuffer";xhr.onload=(()=>{if(xhr.status==200||xhr.status==0&&xhr.response){onload(xhr.response);return}var data=tryParseAsDataURI(url);if(data){onload(data.buffer);return}onerror()});xhr.onerror=onerror;xhr.send(null)})}setWindowTitle=(title=>document.title=title)}else{}var out=Module["print"]||console.log.bind(console);var err=Module["printErr"]||console.warn.bind(console);Object.assign(Module,moduleOverrides);moduleOverrides=null;if(Module["arguments"])arguments_=Module["arguments"];if(Module["thisProgram"])thisProgram=Module["thisProgram"];if(Module["quit"])quit_=Module["quit"];var POINTER_SIZE=4;function warnOnce(text){if(!warnOnce.shown)warnOnce.shown={};if(!warnOnce.shown[text]){warnOnce.shown[text]=1;err(text)}}function convertJsFunctionToWasm(func,sig){if(typeof WebAssembly.Function=="function"){var typeNames={"i":"i32","j":"i64","f":"f32","d":"f64"};var type={parameters:[],results:sig[0]=="v"?[]:[typeNames[sig[0]]]};for(var i=1;i<sig.length;++i){type.parameters.push(typeNames[sig[i]])}return new WebAssembly.Function(type,func)}var typeSection=[1,0,1,96];var sigRet=sig.slice(0,1);var sigParam=sig.slice(1);var typeCodes={"i":127,"j":126,"f":125,"d":124};typeSection.push(sigParam.length);for(var i=0;i<sigParam.length;++i){typeSection.push(typeCodes[sigParam[i]])}if(sigRet=="v"){typeSection.push(0)}else{typeSection=typeSection.concat([1,typeCodes[sigRet]])}typeSection[1]=typeSection.length-2;var bytes=new Uint8Array([0,97,115,109,1,0,0,0].concat(typeSection,[2,7,1,1,101,1,102,0,0,7,5,1,1,102,0,0]));var module=new WebAssembly.Module(bytes);var instance=new WebAssembly.Instance(module,{"e":{"f":func}});var wrappedFunc=instance.exports["f"];return wrappedFunc}var freeTableIndexes=[];var functionsInTableMap;function getEmptyTableSlot(){if(freeTableIndexes.length){return freeTableIndexes.pop()}try{wasmTable.grow(1)}catch(err){if(!(err instanceof RangeError)){throw err}throw"Unable to grow wasm table. Set ALLOW_TABLE_GROWTH."}return wasmTable.length-1}function updateTableMap(offset,count){for(var i=offset;i<offset+count;i++){var item=getWasmTableEntry(i);if(item){functionsInTableMap.set(item,i)}}}var tempRet0=0;var wasmBinary;if(Module["wasmBinary"])wasmBinary=Module["wasmBinary"];var noExitRuntime=Module["noExitRuntime"]||true;if(typeof WebAssembly!="object"){abort("no native wasm support detected")}var wasmMemory;var ABORT=false;var EXITSTATUS;function assert(condition,text){if(!condition){abort(text)}}function getCFunc(ident){var func=Module["_"+ident];return func}function ccall(ident,returnType,argTypes,args,opts){var toC={"string":function(str){var ret=0;if(str!==null&&str!==undefined&&str!==0){var len=(str.length<<2)+1;ret=stackAlloc(len);stringToUTF8(str,ret,len)}return ret},"array":function(arr){var ret=stackAlloc(arr.length);writeArrayToMemory(arr,ret);return ret}};function convertReturnValue(ret){if(returnType==="string")return UTF8ToString(ret);if(returnType==="boolean")return Boolean(ret);return ret}var func=getCFunc(ident);var cArgs=[];var stack=0;if(args){for(var i=0;i<args.length;i++){var converter=toC[argTypes[i]];if(converter){if(stack===0)stack=stackSave();cArgs[i]=converter(args[i])}else{cArgs[i]=args[i]}}}var ret=func.apply(null,cArgs);function onDone(ret){if(stack!==0)stackRestore(stack);return convertReturnValue(ret)}ret=onDone(ret);return ret}var ALLOC_STACK=1;var UTF8Decoder=typeof TextDecoder!="undefined"?new TextDecoder("utf8"):undefined;function UTF8ArrayToString(heap,idx,maxBytesToRead){var endIdx=idx+maxBytesToRead;var endPtr=idx;while(heap[endPtr]&&!(endPtr>=endIdx))++endPtr;if(endPtr-idx>16&&heap.subarray&&UTF8Decoder){return UTF8Decoder.decode(heap.subarray(idx,endPtr))}else{var str="";while(idx<endPtr){var u0=heap[idx++];if(!(u0&128)){str+=String.fromCharCode(u0);continue}var u1=heap[idx++]&63;if((u0&224)==192){str+=String.fromCharCode((u0&31)<<6|u1);continue}var u2=heap[idx++]&63;if((u0&240)==224){u0=(u0&15)<<12|u1<<6|u2}else{u0=(u0&7)<<18|u1<<12|u2<<6|heap[idx++]&63}if(u0<65536){str+=String.fromCharCode(u0)}else{var ch=u0-65536;str+=String.fromCharCode(55296|ch>>10,56320|ch&1023)}}}return str}function UTF8ToString(ptr,maxBytesToRead){return ptr?UTF8ArrayToString(HEAPU8,ptr,maxBytesToRead):""}function stringToUTF8Array(str,heap,outIdx,maxBytesToWrite){if(!(maxBytesToWrite>0))return 0;var startIdx=outIdx;var endIdx=outIdx+maxBytesToWrite-1;for(var i=0;i<str.length;++i){var u=str.charCodeAt(i);if(u>=55296&&u<=57343){var u1=str.charCodeAt(++i);u=65536+((u&1023)<<10)|u1&1023}if(u<=127){if(outIdx>=endIdx)break;heap[outIdx++]=u}else if(u<=2047){if(outIdx+1>=endIdx)break;heap[outIdx++]=192|u>>6;heap[outIdx++]=128|u&63}else if(u<=65535){if(outIdx+2>=endIdx)break;heap[outIdx++]=224|u>>12;heap[outIdx++]=128|u>>6&63;heap[outIdx++]=128|u&63}else{if(outIdx+3>=endIdx)break;heap[outIdx++]=240|u>>18;heap[outIdx++]=128|u>>12&63;heap[outIdx++]=128|u>>6&63;heap[outIdx++]=128|u&63}}heap[outIdx]=0;return outIdx-startIdx}function stringToUTF8(str,outPtr,maxBytesToWrite){return stringToUTF8Array(str,HEAPU8,outPtr,maxBytesToWrite)}function lengthBytesUTF8(str){var len=0;for(var i=0;i<str.length;++i){var u=str.charCodeAt(i);if(u>=55296&&u<=57343)u=65536+((u&1023)<<10)|str.charCodeAt(++i)&1023;if(u<=127)++len;else if(u<=2047)len+=2;else if(u<=65535)len+=3;else len+=4}return len}var UTF16Decoder=typeof TextDecoder!="undefined"?new TextDecoder("utf-16le"):undefined;function UTF16ToString(ptr,maxBytesToRead){var endPtr=ptr;var idx=endPtr>>1;var maxIdx=idx+maxBytesToRead/2;while(!(idx>=maxIdx)&&HEAPU16[idx])++idx;endPtr=idx<<1;if(endPtr-ptr>32&&UTF16Decoder){return UTF16Decoder.decode(HEAPU8.subarray(ptr,endPtr))}else{var str="";for(var i=0;!(i>=maxBytesToRead/2);++i){var codeUnit=HEAP16[ptr+i*2>>1];if(codeUnit==0)break;str+=String.fromCharCode(codeUnit)}return str}}function stringToUTF16(str,outPtr,maxBytesToWrite){if(maxBytesToWrite===undefined){maxBytesToWrite=2147483647}if(maxBytesToWrite<2)return 0;maxBytesToWrite-=2;var startPtr=outPtr;var numCharsToWrite=maxBytesToWrite<str.length*2?maxBytesToWrite/2:str.length;for(var i=0;i<numCharsToWrite;++i){var codeUnit=str.charCodeAt(i);HEAP16[outPtr>>1]=codeUnit;outPtr+=2}HEAP16[outPtr>>1]=0;return outPtr-startPtr}function lengthBytesUTF16(str){return str.length*2}function UTF32ToString(ptr,maxBytesToRead){var i=0;var str="";while(!(i>=maxBytesToRead/4)){var utf32=HEAP32[ptr+i*4>>2];if(utf32==0)break;++i;if(utf32>=65536){var ch=utf32-65536;str+=String.fromCharCode(55296|ch>>10,56320|ch&1023)}else{str+=String.fromCharCode(utf32)}}return str}function stringToUTF32(str,outPtr,maxBytesToWrite){if(maxBytesToWrite===undefined){maxBytesToWrite=2147483647}if(maxBytesToWrite<4)return 0;var startPtr=outPtr;var endPtr=startPtr+maxBytesToWrite-4;for(var i=0;i<str.length;++i){var codeUnit=str.charCodeAt(i);if(codeUnit>=55296&&codeUnit<=57343){var trailSurrogate=str.charCodeAt(++i);codeUnit=65536+((codeUnit&1023)<<10)|trailSurrogate&1023}HEAP32[outPtr>>2]=codeUnit;outPtr+=4;if(outPtr+4>endPtr)break}HEAP32[outPtr>>2]=0;return outPtr-startPtr}function lengthBytesUTF32(str){var len=0;for(var i=0;i<str.length;++i){var codeUnit=str.charCodeAt(i);if(codeUnit>=55296&&codeUnit<=57343)++i;len+=4}return len}function writeArrayToMemory(array,buffer){HEAP8.set(array,buffer)}function writeAsciiToMemory(str,buffer,dontAddNull){for(var i=0;i<str.length;++i){HEAP8[buffer++>>0]=str.charCodeAt(i)}if(!dontAddNull)HEAP8[buffer>>0]=0}var buffer,HEAP8,HEAPU8,HEAP16,HEAPU16,HEAP32,HEAPU32,HEAPF32,HEAPF64;function updateGlobalBufferAndViews(buf){buffer=buf;Module["HEAP8"]=HEAP8=new Int8Array(buf);Module["HEAP16"]=HEAP16=new Int16Array(buf);Module["HEAP32"]=HEAP32=new Int32Array(buf);Module["HEAPU8"]=HEAPU8=new Uint8Array(buf);Module["HEAPU16"]=HEAPU16=new Uint16Array(buf);Module["HEAPU32"]=HEAPU32=new Uint32Array(buf);Module["HEAPF32"]=HEAPF32=new Float32Array(buf);Module["HEAPF64"]=HEAPF64=new Float64Array(buf)}var INITIAL_MEMORY=Module["INITIAL_MEMORY"]||16777216;var wasmTable;var __ATPRERUN__=[];var __ATINIT__=[];var __ATPOSTRUN__=[];var runtimeInitialized=false;var runtimeExited=false;var runtimeKeepaliveCounter=0;function keepRuntimeAlive(){return noExitRuntime||runtimeKeepaliveCounter>0}function preRun(){if(Module["preRun"]){if(typeof Module["preRun"]=="function")Module["preRun"]=[Module["preRun"]];while(Module["preRun"].length){addOnPreRun(Module["preRun"].shift())}}callRuntimeCallbacks(__ATPRERUN__)}function initRuntime(){runtimeInitialized=true;callRuntimeCallbacks(__ATINIT__)}function exitRuntime(){runtimeExited=true}function postRun(){if(Module["postRun"]){if(typeof Module["postRun"]=="function")Module["postRun"]=[Module["postRun"]];while(Module["postRun"].length){addOnPostRun(Module["postRun"].shift())}}callRuntimeCallbacks(__ATPOSTRUN__)}function addOnPreRun(cb){__ATPRERUN__.unshift(cb)}function addOnInit(cb){__ATINIT__.unshift(cb)}function addOnPostRun(cb){__ATPOSTRUN__.unshift(cb)}var runDependencies=0;var runDependencyWatcher=null;var dependenciesFulfilled=null;function addRunDependency(id){runDependencies++;if(Module["monitorRunDependencies"]){Module["monitorRunDependencies"](runDependencies)}}function removeRunDependency(id){runDependencies--;if(Module["monitorRunDependencies"]){Module["monitorRunDependencies"](runDependencies)}if(runDependencies==0){if(runDependencyWatcher!==null){clearInterval(runDependencyWatcher);runDependencyWatcher=null}if(dependenciesFulfilled){var callback=dependenciesFulfilled;dependenciesFulfilled=null;callback()}}}Module["preloadedImages"]={};Module["preloadedAudios"]={};function abort(what){{if(Module["onAbort"]){Module["onAbort"](what)}}what="Aborted("+what+")";err(what);ABORT=true;EXITSTATUS=1;what+=". Build with -s ASSERTIONS=1 for more info.";var e=new WebAssembly.RuntimeError(what);readyPromiseReject(e);throw e}var dataURIPrefix="data:application/octet-stream;base64,";function isDataURI(filename){return filename.startsWith(dataURIPrefix)}var wasmBinaryFile;wasmBinaryFile="data:application/octet-stream;base64,AGFzbQEAAAABuwEcYAF/AX9gAn9/AGABfwBgBH9/f38AYAV/f39/fwBgAX8BfGACf38Bf2ACf38BfGADf39/AX9gBn9/f39/fwBgA39/fwBgAABgAAF/YAJ/fABgDX9/f39/f39/f39/f38AYAh/f39/f39/fwBgB39/f39/f38AYAN/f34BfmACf34Bf2ADf35/AGACf38BfmABfwF+YAR/f398AX9gA39/fABgBH9/f38Bf2ABfAF+YAF8AXxgBH9/fn4AAtkFGgNlbnYYX19jeGFfYWxsb2NhdGVfZXhjZXB0aW9uAAADZW52C19fY3hhX3Rocm93AAoDZW52Fl9lbWJpbmRfcmVnaXN0ZXJfY2xhc3MADgNlbnYiX2VtYmluZF9yZWdpc3Rlcl9jbGFzc19jb25zdHJ1Y3RvcgAJA2Vudh9fZW1iaW5kX3JlZ2lzdGVyX2NsYXNzX2Z1bmN0aW9uAA8DZW52EF9lbXZhbF9uZXdfYXJyYXkADANlbnYRX2VtdmFsX25ld19vYmplY3QADANlbnYSX2VtdmFsX25ld19jc3RyaW5nAAADZW52EV9lbXZhbF90YWtlX3ZhbHVlAAYDZW52E19lbXZhbF9zZXRfcHJvcGVydHkACgNlbnYNX2VtdmFsX2RlY3JlZgACA2VudhhfZW12YWxfZ2V0X21ldGhvZF9jYWxsZXIABgNlbnYNX2VtdmFsX2luY3JlZgACA2VudhdfZW12YWxfY2FsbF92b2lkX21ldGhvZAADA2VudhVfZW1iaW5kX3JlZ2lzdGVyX3ZvaWQAAQNlbnYVX2VtYmluZF9yZWdpc3Rlcl9ib29sAAQDZW52GF9lbWJpbmRfcmVnaXN0ZXJfaW50ZWdlcgAEA2VudhZfZW1iaW5kX3JlZ2lzdGVyX2Zsb2F0AAoDZW52G19lbWJpbmRfcmVnaXN0ZXJfc3RkX3N0cmluZwABA2VudhxfZW1iaW5kX3JlZ2lzdGVyX3N0ZF93c3RyaW5nAAoDZW52Fl9lbWJpbmRfcmVnaXN0ZXJfZW12YWwAAQNlbnYcX2VtYmluZF9yZWdpc3Rlcl9tZW1vcnlfdmlldwAKA2VudhVlbXNjcmlwdGVuX21lbWNweV9iaWcACANlbnYWZW1zY3JpcHRlbl9yZXNpemVfaGVhcAAAA2VudgVhYm9ydAAL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GCADQoCAgICAgICAwAA3AxAgA0HoEzYCACADQgg3AwggAiADEBtBKBBpIgNB5AA2AiAgA0IFNwMYIANCgICAgICAgIDAADcDECADQegTNgIAIANCCTcDCCACIAMQG0EoEGkiA0HkADYCICADQgU3AxggA0KAgICAgICAgMAANwMQIANB6BM2AgAgA0IKNwMIIAIgAxAbAkACQAJAIAEoAgQiAyABLQALIgAgAEEYdEEYdSIEQQBIG0EFRgR/IAFB2gpBBRBqRQ0CIAEtAAsiACEEIAEoAgQFIAMLIAAgBEEYdEEYdUEASBtBAkcNACABQd8IQQIQag0AQeAAEGkiAEIANwMwIABC0A83AyggAEEyNgIgIABCATcDGCAAQoCAgICAgICawAA3AxAgAELkADcDCCAAQoCAgICAgLC5wAA3A1ggAEKAgICAgICA+D83A1AgAEKAgICAgICAgMAANwNIIABC8dGNx9iWvuo+NwNAIABBoBM2AgAgAEEANgI4DAILQcgAEGkiAEIANwMwIABC0A83AyggAEEyNgIgIABCATcDGCAAQoCAgICAgICawAA3AxAgAELkADcDCCAAQvuouL2U3J66PzcDQCAAQeASNgIAIABBADYCOAwBC0HAABBpIgBCADcDMCAAQtAPNwMoIABBMjYCICAAQgE3AxggAEKAgICAgICAmsAANwMQIABBpBI2AgAgAELkADcDCCAAQQA2AjgLIAIgABAbIAJC5AA3A7ABIAJC5AA3A8ABQcAAEGkhACACKwOAFiEKIABCiCc3AyggAEHIATYCICAAQoCAgICAgICEwAA3AxggAEKAgICAgICAmsAANwMQIABCyAE3AwggACAKOQM4IABCgICAgICAgJrAADcDMCAAQbgWNgIAIAIgADYC+BUgAiAAEBsgAkHMAWoiASEAAkACQCABKAIAIgNFDQADQCADIgApAxAiC0LJAVoEQCAAIQEgACgCACIDDQEMAgsgC0LIAVENAiAAKAIEIgMNAAsgAEEEaiEBC0EYEGkiAyAANgIIIANCADcCACADQsgBNwMQIAEgAzYCACACKALIASgCACIABEAgAiAANgLIASABKAIAIQMLIAIoAswBIAMQIiACQdABaiIAIAAoAgBBAWo2AgALIAIL9RMDD38FfAF+IAArA4gWIhQgAWZFBEAgACAAKwOA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ASABKAIAQQFrIgE2AgAgAUEASARAIAIQYQsgAAsMACAAEIIBGiAAEGELCgAgAEEEaigCAAsEACMACwYAIAAkAAsQACMAIABrQXBxIgAkACAACxwAIAAgAUEIIAKnIAJCIIinIAOnIANCIIinEBkLC8ZBBQBBkAgL9wxxdHkAaW52ZW50b3J5AF9fbmV4dF9wcmltZSBvdmVyZmxvdwB1bnNpZ25lZCBzaG9ydAB1bnNpZ25lZCBpbnQAZmxvYXQAdWludDY0X3QAYXMAdmVjdG9yAGZhaXIAdW5zaWduZWQgY2hhcgBydW5UbwBzdGQ6OmV4Y2VwdGlvbgBXZWJTaW0AYm9vbABwbmwAZW1zY3JpcHRlbjo6dmFsAGJlc3RBc2sAZGVwdGgAcHVzaAB1bnNpZ25lZCBsb25nAHN0ZDo6d3N0cmluZwBiYXNpY19zdHJpbmcAc3RkOjpzdHJpbmcAc3RkOjp1MTZzdHJpbmcAc3RkOjp1MzJzdHJpbmcAYWxsb2NhdG9yPFQ+OjphbGxvY2F0ZShzaXplX3QgbikgJ24nIGV4Y2VlZHMgbWF4aW11bSBzdXBwb3J0ZWQgc2l6ZQBuYWl2ZQBhdmVyYWdlUmF0ZQBzZXRJbmZvcm1lZFJhdGUAZWRnZU5vaXNlAG1pbmUAdGltZQBkb3VibGUAcHJpY2UAdm9pZABtaWQAYmVzdEJpZABlZGdlSW5mb3JtZWQAZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8c2hvcnQ+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PHVuc2lnbmVkIHNob3J0PgBlbXNjcmlwdGVuOjptZW1vcnlfdmlldzxpbnQ+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PHVuc2lnbmVkIGludD4AZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8ZmxvYXQ+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PHVpbnQ4X3Q+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PGludDhfdD4AZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8dWludDE2X3Q+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PGludDE2X3Q+AGVtc2NyaXB0ZW46Om1lbW9yeV92aWV3PHVpbnQzMl90PgBlbXNjcmlwdGVuOjptZW1vcnlfdmlldzxpbnQzMl90PgBlbXNjcmlwdGVuOjptZW1vcnlfdmlldzxjaGFyPgBlbXNjcmlwdGVuOjptZW1vcnlfdmlldzx1bnNpZ25lZCBjaGFyPgBzdGQ6OmJhc2ljX3N0cmluZzx1bnNpZ25lZCBjaGFyPgBlbXNjcmlwdGVuOjptZW1vcnlfdmlldzxzaWduZWQgY2hhcj4AZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8bG9uZz4AZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8dW5zaWduZWQgbG9uZz4AZW1zY3JpcHRlbjo6bWVtb3J5X3ZpZXc8ZG91YmxlPgAAAAAAAMQIAAACAAAAAwAAAAQAAAAFAAAABgAAAAcAAAAIAAAACQAAAAoAAABOU3QzX18yMTBfX2Z1bmN0aW9uNl9fZnVuY0laTjZNYXJrZXRDMUVqZGRFMyRfME5TXzlhbGxvY2F0b3JJUzNfRUVGdnl5eGpFRUUATlN0M19fMjEwX19mdW5jdGlvbjZfX2Jhc2VJRnZ5eXhqRUVFAAAAADgjAACUCAAAYCMAAEgIAAC8CAAAWk42TWFya2V0QzFFamRkRTMkXzAAAAAAOCMAANAIAAAxNEluZm9ybWVkVHJhZGVyADVBZ2VudAA4IwAAAQkAAGAjAADwCAAACAkAAAAAAABMCQAACwAAAAwAAAANAAAADgAAAA8AAAAQAAAAMTFNYXJrZXRNYWtlcgAAAGAjAAA8CQAACAkAAAAAAACMCQAACwAAABEAAAANAAAADgAAABIAAAAQAAAAMTdTa2V3ZWRNYXJrZXRNYWtlcgBgIwAAeAkAAEwJAAAAAAAA1AkAAAsAAAATAAAADQAAAA4AAAAUAAAAFQAAADIyQXZlbGxhbmVkYVN0b2lrb3ZNYWtlcgAAAABgIwAAuAkAAEwJAAAAAAAACAoAABYAAAAXAAAAGAAAABkAAAAxMU5vaXNlVHJhZGVyAAAAYCMAAPgJAAAICQAAdCIAADAKAABOMTBlbXNjcmlwdGVuM3ZhbEUAADgjAAAcCgAANldlYlNpbQA4IwAAOAoAAFA2V2ViU2ltAAAAABgkAABICgAAAAAAAEAKAABQSzZXZWJTaW0AAAAYJAAAZAoAAAEAAABACgAAaWkAdgB2aQBBkBULggJUCgAA1CIAABALAAAoIwAATlN0M19fMjEyYmFzaWNfc3RyaW5nSWNOU18xMWNoYXJfdHJhaXRzSWNFRU5TXzlhbGxvY2F0b3JJY0VFRUUATlN0M19fMjIxX19iYXNpY19zdHJpbmdfY29tbW9uSUxiMUVFRQAAAAA4IwAA3woAALwjAACgCgAAAAAAAAEAAAAICwAAAAAAAGlpaWlkAAAAAAAAAGALAAAWAAAALwAAADAAAAAxAAAAMjFUdW5hYmxlSW5mb3JtZWRUcmFkZXIAYCMAAEgLAAAQCQAAdCIAAFQKAAAoIwAAdmlpZAAAAAAoIwAAcAoAAGRpaQAoIwAAVAoAQaAXC8gnMAoAAHAKAACMIgAA1CIAAGlpaWlpAE5TdDNfXzIxMmJhc2ljX3N0cmluZ0loTlNfMTFjaGFyX3RyYWl0c0loRUVOU185YWxsb2NhdG9ySWhFRUVFAAAAALwjAAC2CwAAAAAAAAEAAAAICwAAAAAAAE5TdDNfXzIxMmJhc2ljX3N0cmluZ0l3TlNfMTFjaGFyX3RyYWl0c0l3RUVOU185YWxsb2NhdG9ySXdFRUVFAAC8IwAAEAwAAAAAAAABAAAACAsAAAAAAABOU3QzX18yMTJiYXNpY19zdHJpbmdJRHNOU18xMWNoYXJfdHJhaXRzSURzRUVOU185YWxsb2NhdG9ySURzRUVFRQAAALwjAABoDAAAAAAAAAEAAAAICwAAAAAAAE5TdDNfXzIxMmJhc2ljX3N0cmluZ0lEaU5TXzExY2hhcl90cmFpdHNJRGlFRU5TXzlhbGxvY2F0b3JJRGlFRUVFAAAAvCMAAMQMAAAAAAAAAQAAAAgLAAAAAAAATjEwZW1zY3JpcHRlbjExbWVtb3J5X3ZpZXdJY0VFAAA4IwAAIA0AAE4xMGVtc2NyaXB0ZW4xMW1lbW9yeV92aWV3SWFFRQAAOCMAAEgNAABOMTBlbXNjcmlwdGVuMTFtZW1vcnlfdmlld0loRUUAADgjAABwDQAATjEwZW1zY3JpcHRlbjExbWVtb3J5X3ZpZXdJc0VFAAA4IwAAmA0AAE4xMGVtc2NyaXB0ZW4xMW1lbW9yeV92aWV3SXRFRQAAOCMAAMANAABOMTBlbXNjcmlwdGVuMTFtZW1vcnlfdmlld0lpRUUAADgjAADoDQAATjEwZW1zY3JpcHRlbjExbWVtb3J5X3ZpZXdJakVFAAA4IwAAEA4AAE4xMGVtc2NyaXB0ZW4xMW1lbW9yeV92aWV3SWxFRQAAOCMAADgOAABOMTBlbXNjcmlwdGVuMTFtZW1vcnlfdmlld0ltRUUAADgjAABgDgAATjEwZW1zY3JpcHRlbjExbWVtb3J5X3ZpZXdJZkVFAAA4IwAAiA4AAE4xMGVtc2NyaXB0ZW4xMW1lbW9yeV92aWV3SWRFRQAAOCMAALAOAAAAOPr+Qi7mPzBnx5NX8y49AQAAAAAA4L9bMFFVVVXVP5BF6////8+/EQHxJLOZyT+fyAbldVXFvwAAAAAAAOC/d1VVVVVV1T/L/f/////PvwzdlZmZmck/p0VnVVVVxb8w3kSjJEnCP2U9QqT//7+/ytYqKIRxvD//aLBD65m5v4XQr/eCgbc/zUXRdRNStb+f3uDD8DT3PwCQ5nl/zNe/H+ksangT9z8AAA3C7m/Xv6C1+ghg8vY/AOBRE+MT1799jBMfptH2PwB4KDhbuNa/0bTFC0mx9j8AeICQVV3Wv7oMLzNHkfY/AAAYdtAC1r8jQiIYn3H2PwCQkIbKqNW/2R6lmU9S9j8AUANWQ0/Vv8Qkj6pWM/Y/AEBrwzf21L8U3J1rsxT2PwBQqP2nndS/TFzGUmT29T8AqIk5kkXUv08skbVn2PU/ALiwOfTt07/ekFvLvLr1PwBwj0TOltO/eBrZ8mGd9T8AoL0XHkDTv4dWRhJWgPU/AIBG7+Lp0r/Ta+fOl2P1PwDgMDgblNK/k3+n4iVH9T8AiNqMxT7Sv4NFBkL/KvU/AJAnKeHp0b/fvbLbIg/1PwD4SCttldG/1940R4/z9D8A+LmaZ0HRv0Ao3s9D2PQ/AJjvlNDt0L/Io3jAPr30PwAQ2xilmtC/iiXgw3+i9D8AuGNS5kfQvzSE1CQFiPQ/APCGRSLrz78LLRkbzm30PwCwF3VKR8+/VBg509lT9D8AMBA9RKTOv1qEtEQnOvQ/ALDpRA0Czr/7+BVBtSD0PwDwdymiYM2/sfQ+2oIH9D8AkJUEAcDMv4/+V12P7vM/ABCJVikgzL/pTAug2dXzPwAQgY0Xgcu/K8EQwGC98z8A0NPMyeLKv7jadSskpfM/AJASLkBFyr8C0J/NIo3zPwDwHWh3qMm/HHqExVt18z8AMEhpbQzJv+I2rUnOXfM/AMBFpiBxyL9A1E2YeUbzPwAwFLSP1se/JMv/zlwv8z8AcGI8uDzHv0kNoXV3GPM/AGA3m5qjxr+QOT43yAHzPwCgt1QxC8a/QfiVu07r8j8AMCR2fXPFv9GpGQIK1fI/ADDCj3vcxL8q/beo+b7yPwAA0lEsRsS/qxsMehyp8j8AAIO8irDDvzC1FGByk/I/AABJa5kbw7/1oVdX+n3yPwBApJBUh8K/vzsdm7No8j8AoHn4ufPBv731j4OdU/I/AKAsJchgwb87CMmqtz7yPwAg91d/zsC/tkCpKwEq8j8AoP5J3DzAvzJBzJZ5FfI/AIBLvL1Xv7+b/NIdIAHyPwBAQJYIN76/C0hNSfTs8T8AQPk+mBe9v2llj1L12PE/AKDYTmf5u798flcRI8XxPwBgLyB53Lq/6SbLdHyx8T8AgCjnw8C5v7YaLAwBnvE/AMBys0amuL+9cLZ7sIrxPwAArLMBjbe/trzvJYp38T8AADhF8XS2v9oxTDWNZPE/AICHbQ5etb/dXyeQuVHxPwDgod5cSLS/TNIypA4/8T8AoGpN2TOzv9r5EHKLLPE/AGDF+Hkgsr8xtewoMBrxPwAgYphGDrG/rzSE2vsH8T8AANJqbPqvv7NrTg/u9fA/AEB3So3arb/OnypdBuTwPwAAheTsvKu/IaUsY0TS8D8AwBJAiaGpvxqY4nynwPA/AMACM1iIp7/RNsaDL6/wPwCA1mdecaW/OROgmNud8D8AgGVJilyjv9/nUq+rjPA/AEAVZONJob/7KE4vn3vwPwCA64LAcp6/GY81jLVq8D8AgFJS8VWavyz57KXuWfA/AICBz2I9lr+QLNHNSUnwPwAAqoz7KJK/qa3wxsY48D8AAPkgezGMv6kyeRNlKPA/AACqXTUZhL9Ic+onJBjwPwAA7MIDEni/lbEUBgQI8D8AACR5CQRgvxr6Jvcf4O8/AACQhPPvbz906mHCHKHvPwAAPTVB3Ic/LpmBsBBj7z8AgMLEo86TP82t7jz2Je8/AACJFMGfmz/nE5EDyOnuPwAAEc7YsKE/q7HLeICu7j8AwAHQW4qlP5sMnaIadO4/AIDYQINcqT+1mQqDkTruPwCAV+9qJ60/VppgCeAB7j8AwJjlmHWwP5i7d+UByu0/ACAN4/VTsj8DkXwL8pLtPwAAOIvdLrQ/zlz7Zqxc7T8AwFeHWQa2P53eXqosJ+0/AABqNXbatz/NLGs+bvLsPwBgHE5Dq7k/Anmnom2+7D8AYA27x3i7P20IN20mi+w/ACDnMhNDvT8EWF29lFjsPwBg3nExCr8/jJ+7M7Um7D8AQJErFWfAPz/n7O6D9es/ALCSgoVHwT/Bltt1/cTrPwAwys1uJsI/KEqGDB6V6z8AUMWm1wPDPyw+78XiZes/ABAzPMPfwz+LiMlnSDfrPwCAems2usQ/SjAdIUsJ6z8A8NEoOZPFP37v8oXo2+o/APAYJM1qxj+iPWAxHa/qPwCQZuz4QMc/p1jTP+aC6j8A8Br1wBXIP4tzCe9AV+o/AID2VCnpyD8nS6uQKizqPwBA+AI2u8k/0fKTE6AB6j8AACwc7YvKPxs82ySf1+k/ANABXFFbyz+QsccFJa7pPwDAvMxnKcw/L86X8i6F6T8AYEjVNfbMP3VLpO66XOk/AMBGNL3BzT84SOedxjTpPwDgz7gBjM4/5lJnL08N6T8AkBfACVXPP53X/45S5ug/ALgfEmwO0D98AMyfzr/oPwDQkw64cdA/DsO+2sCZ6D8AcIaea9TQP/sXI6ondOg/ANBLM4c20T8ImrOsAE/oPwBII2cNmNE/VT5l6Ekq6D8AgMzg//jRP2AC9JUBBug/AGhj119Z0j8po+BjJeLnPwCoFAkwudI/rbXcd7O+5z8AYEMQchjTP8Ill2eqm+c/ABjsbSZ30z9XBhfyB3nnPwAwr/tP1dM/DBPW28pW5z8A4C/j7jLUP2u2TwEAEOY/PFtCkWwCfjyVtE0DADDmP0FdAEjqv408eNSUDQBQ5j+3pdaGp3+OPK1vTgcAcOY/TCVUa+r8YTyuD9/+/4/mP/0OWUwnfny8vMVjBwCw5j8B2txIaMGKvPbBXB4A0OY/EZNJnRw/gzw+9gXr/+/mP1Mt4hoEgH68gJeGDgAQ5z9SeQlxZv97PBLpZ/z/L+c/JIe9JuIAjDxqEYHf/0/nP9IB8W6RAm68kJxnDwBw5z90nFTNcfxnvDXIfvr/j+c/gwT1nsG+gTzmwiD+/6/nP2VkzCkXfnC8AMk/7f/P5z8ci3sIcoCAvHYaJun/7+c/rvmdbSjAjTzoo5wEABDoPzNM5VHSf4k8jyyTFwAw6D+B8zC26f6KvJxzMwYAUOg/vDVla7+/iTzGiUIgAHDoP3V7EfNlv4u8BHn16/+P6D9Xyz2ibgCJvN8EvCIAsOg/CkvgON8AfbyKGwzl/8/oPwWf/0ZxAIi8Q46R/P/v6D84cHrQe4GDPMdf+h4AEOk/A7TfdpE+iTy5e0YTADDpP3YCmEtOgH88bwfu5v9P6T8uYv/Z8H6PvNESPN7/b+k/ujgmlqqCcLwNikX0/4/pP++oZJEbgIe8Pi6Y3f+v6T83k1qK4ECHvGb7Se3/z+k/AOCbwQjOPzxRnPEgAPDpPwpbiCeqP4q8BrBFEQAQ6j9W2liZSP90PPr2uwcAMOo/GG0riqu+jDx5HZcQAFDqPzB5eN3K/og8SC71HQBw6j/bq9g9dkGPvFIzWRwAkOo/EnbChAK/jrxLPk8qALDqP18//zwE/Wm80R6u1//P6j+0cJAS5z6CvHgEUe7/7+o/o94O4D4GajxbDWXb/w/rP7kKHzjIBlo8V8qq/v8v6z8dPCN0HgF5vNy6ldn/T+s/nyqGaBD/ebycZZ4kAHDrPz5PhtBF/4o8QBaH+f+P6z/5w8KWd/58PE/LBNL/r+s/xCvy7if/Y7xFXEHS/8/rPyHqO+63/2y83wlj+P/v6z9cCy6XA0GBvFN2teH/D+w/GWq3lGTBizzjV/rx/y/sP+3GMI3v/mS8JOS/3P9P7D91R+y8aD+EvPe5VO3/b+w/7OBT8KN+hDzVj5nr/4/sP/GS+Y0Gg3M8miElIQCw7D8EDhhkjv1ovJxGlN3/z+w/curHHL5+jjx2xP3q/+/sP/6In605vo48K/iaFgAQ7T9xWrmokX11PB33Dw0AMO0/2sdwaZDBiTzED3nq/0/tPwz+WMU3Dli85YfcLgBw7T9ED8FN1oB/vKqC3CEAkO0/XFz9lI98dLyDAmvY/6/tP35hIcUdf4w8OUdsKQDQ7T9Tsf+yngGIPPWQROX/7+0/icxSxtIAbjyU9qvN/w/uP9JpLSBAg3+83chS2/8v7j9kCBvKwQB7PO8WQvL/T+4/UauUsKj/cjwRXoro/2/uP1m+77Fz9le8Df+eEQCQ7j8ByAtejYCEvEQXpd//r+4/tSBD1QYAeDyhfxIaANDuP5JcVmD4AlC8xLy6BwDw7j8R5jVdRECFvAKNevX/D+8/BZHvOTH7T7zHiuUeADDvP1URc/KsgYo8lDSC9f9P7z9Dx9fUQT+KPGtMqfz/b+8/dXiYHPQCYrxBxPnh/4/vP0vnd/TRfXc8fuPg0v+v7z8xo3yaGQFvvJ7kdxwA0O8/sazOS+6BcTwxw+D3/+/vP1qHcAE3BW68bmBl9P8P8D/aChxJrX6KvFh6hvP/L/A/4LL8w2l/l7wXDfz9/0/wP1uUyzT+v5c8gk3NAwBw8D/LVuTAgwCCPOjL8vn/j/A/GnU3vt//bbxl2gwBALDwP+sm5q5/P5G8ONOkAQDQ8D/3n0h5+n2APP392vr/7/A/wGvWcAUEd7yW/boLABDxP2ILbYTUgI48XfTl+v8v8T/vNv1k+r+dPNma1Q0AUPE/rlAScHcAmjyaVSEPAHDxP+7e4+L5/Y08JlQn/P+P8T9zcjvcMACRPFk8PRIAsPE/iAEDgHl/mTy3nin4/8/xP2eMn6sy+WW8ANSK9P/v8T/rW6edv3+TPKSGiwwAEPI/Ilv9kWuAnzwDQ4UDADDyPzO/n+vC/5M8hPa8//9P8j9yLi5+5wF2PNkhKfX/b/I/YQx/drv8fzw8OpMUAJDyPytBAjzKAnK8E2NVFACw8j8CH/IzgoCSvDtS/uv/z/I/8txPOH7/iLyWrbgLAPDyP8VBMFBR/4W8r+J6+/8P8z+dKF6IcQCBvH9frP7/L/M/Fbe3P13/kbxWZ6YMAFDzP72CiyKCf5U8Iff7EQBw8z/M1Q3EugCAPLkvWfn/j/M/UaeyLZ0/lLxC0t0EALDzP+E4dnBrf4U8V8my9f/P8z8xEr8QOgJ6PBi0sOr/7/M/sFKxZm1/mDz0rzIVABD0PySFGV83+Gc8KYtHFwAw9D9DUdxy5gGDPGO0lef/T/Q/WomyuGn/iTzgdQTo/2/0P1TywpuxwJW858Fv7/+P9D9yKjryCUCbPASnvuX/r/Q/RX0Nv7f/lLzeJxAXAND0Pz1q3HFkwJm84j7wDwDw9D8cU4ULiX+XPNFL3BIAEPU/NqRmcWUEYDx6JwUWADD1PwkyI87Ov5a8THDb7P9P9T/XoQUFcgKJvKlUX+//b/U/EmTJDua/mzwSEOYXAJD1P5Dvr4HFfog8kj7JAwCw9T/ADL8KCEGfvLwZSR0A0PU/KUcl+yqBmLyJerjn/+/1PwRp7YC3fpS8AEH0PgveCgIAAAADAAAABQAAAAcAAAALAAAADQAAABEAAAATAAAAFwAAAB0AAAAfAAAAJQAAACkAAAArAAAALwAAADUAAAA7AAAAPQAAAEMAAABHAAAASQAAAE8AAABTAAAAWQAAAGEAAABlAAAAZwAAAGsAAABtAAAAcQAAAH8AAACDAAAAiQAAAIsAAACVAAAAlwAAAJ0AAACjAAAApwAAAK0AAACzAAAAtQAAAL8AAADBAAAAxQAAAMcAAADTAAAAAQAAAAsAAAANAAAAEQAAABMAAAAXAAAAHQAAAB8AAAAlAAAAKQAAACsAAAAvAAAANQAAADsAAAA9AAAAQwAAAEcAAABJAAAATwAAAFMAAABZAAAAYQAAAGUAAABnAAAAawAAAG0AAABxAAAAeQAAAH8AAACDAAAAiQAAAIsAAACPAAAAlQAAAJcAAACdAAAAowAAAKcAAACpAAAArQAAALMAAAC1AAAAuwAAAL8AAADBAAAAxQAAAMcAAADRAAAATjEwX19jeHhhYml2MTE2X19zaGltX3R5cGVfaW5mb0UAAAAAYCMAAPAgAADMJAAATjEwX19jeHhhYml2MTE3X19jbGFzc190eXBlX2luZm9FAAAAYCMAACAhAAAUIQAATjEwX19jeHhhYml2MTE3X19wYmFzZV90eXBlX2luZm9FAAAAYCMAAFAhAAAUIQAATjEwX19jeHhhYml2MTE5X19wb2ludGVyX3R5cGVfaW5mb0UAYCMAAIAhAAB0IQAATjEwX19jeHhhYml2MTIwX19mdW5jdGlvbl90eXBlX2luZm9FAAAAAGAjAACwIQAAFCEAAE4xMF9fY3h4YWJpdjEyOV9fcG9pbnRlcl90b19tZW1iZXJfdHlwZV9pbmZvRQAAAGAjAADkIQAAdCEAAAAAAABkIgAAMgAAADMAAAA0AAAANQAAADYAAABOMTBfX2N4eGFiaXYxMjNfX2Z1bmRhbWVudGFsX3R5cGVfaW5mb0UAYCMAADwiAAAUIQAAdgAAACgiAABwIgAARG4AACgiAAB8IgAAYgAAACgiAACIIgAAYwAAACgiAACUIgAAaAAAACgiAACgIgAAYQAAACgiAACsIgAAcwAAACgiAAC4IgAAdAAAACgiAADEIgAAaQAAACgiAADQIgAAagAAACgiAADcIgAAbAAAACgiAADoIgAAbQAAACgiAAD0IgAAeAAAACgiAAAAIwAAeQAAACgiAAAMIwAAZgAAACgiAAAYIwAAZAAAACgiAAAkIwAAAAAAAEQhAAAyAAAANwAAADQAAAA1AAAAOAAAADkAAAA6AAAAOwAAAAAAAACoIwAAMgAAADwAAAA0AAAANQAAADgAAAA9AAAAPgAAAD8AAABOMTBfX2N4eGFiaXYxMjBfX3NpX2NsYXNzX3R5cGVfaW5mb0UAAAAAYCMAAIAjAABEIQAAAAAAAAQkAAAyAAAAQAAAADQAAAA1AAAAOAAAAEEAAABCAAAAQwAAAE4xMF9fY3h4YWJpdjEyMV9fdm1pX2NsYXNzX3R5cGVfaW5mb0UAAABgIwAA3CMAAEQhAAAAAAAApCEAADIAAABEAAAANAAAADUAAABFAAAAAAAAAFAkAABGAAAARwAAAEgAAABTdDlleGNlcHRpb24AAAAAOCMAAEAkAAAAAAAAfCQAAAEAAABJAAAASgAAAFN0MTFsb2dpY19lcnJvcgBgIwAAbCQAAFAkAAAAAAAAsCQAAAEAAABLAAAASgAAAFN0MTJsZW5ndGhfZXJyb3IAAAAAYCMAAJwkAAB8JAAAU3Q5dHlwZV9pbmZvAAAAADgjAAC8JABB1MkACwPgJlA=";if(!isDataURI(wasmBinaryFile)){wasmBinaryFile=locateFile(wasmBinaryFile)}function getBinary(file){try{if(file==wasmBinaryFile&&wasmBinary){return new Uint8Array(wasmBinary)}var binary=tryParseAsDataURI(file);if(binary){return binary}if(readBinary){return readBinary(file)}else{throw"both async and sync fetching of the wasm failed"}}catch(err){abort(err)}}function getBinaryPromise(){if(!wasmBinary&&(ENVIRONMENT_IS_WEB||ENVIRONMENT_IS_WORKER)){if(typeof fetch=="function"){return fetch(wasmBinaryFile,{credentials:"same-origin"}).then(function(response){if(!response["ok"]){throw"failed to load wasm binary file at '"+wasmBinaryFile+"'"}return response["arrayBuffer"]()}).catch(function(){return getBinary(wasmBinaryFile)})}}return Promise.resolve().then(function(){return getBinary(wasmBinaryFile)})}function createWasm(){var info={"env":asmLibraryArg,"wasi_snapshot_preview1":asmLibraryArg};function receiveInstance(instance,module){var exports=instance.exports;Module["asm"]=exports;wasmMemory=Module["asm"]["memory"];updateGlobalBufferAndViews(wasmMemory.buffer);wasmTable=Module["asm"]["__indirect_function_table"];addOnInit(Module["asm"]["__wasm_call_ctors"]);removeRunDependency("wasm-instantiate")}addRunDependency("wasm-instantiate");function receiveInstantiationResult(result){receiveInstance(result["instance"])}function instantiateArrayBuffer(receiver){return getBinaryPromise().then(function(binary){return WebAssembly.instantiate(binary,info)}).then(function(instance){return instance}).then(receiver,function(reason){err("failed to asynchronously prepare wasm: "+reason);abort(reason)})}function instantiateAsync(){if(!wasmBinary&&typeof WebAssembly.instantiateStreaming=="function"&&!isDataURI(wasmBinaryFile)&&typeof fetch=="function"){return fetch(wasmBinaryFile,{credentials:"same-origin"}).then(function(response){var result=WebAssembly.instantiateStreaming(response,info);return result.then(receiveInstantiationResult,function(reason){err("wasm streaming compile failed: "+reason);err("falling back to ArrayBuffer instantiation");return instantiateArrayBuffer(receiveInstantiationResult)})})}else{return instantiateArrayBuffer(receiveInstantiationResult)}}if(Module["instantiateWasm"]){try{var exports=Module["instantiateWasm"](info,receiveInstance);return exports}catch(e){err("Module.instantiateWasm callback failed with error: "+e);return false}}instantiateAsync().catch(readyPromiseReject);return{}}var tempDouble;var tempI64;function callRuntimeCallbacks(callbacks){while(callbacks.length>0){var callback=callbacks.shift();if(typeof callback=="function"){callback(Module);continue}var func=callback.func;if(typeof func=="number"){if(callback.arg===undefined){getWasmTableEntry(func)()}else{getWasmTableEntry(func)(callback.arg)}}else{func(callback.arg===undefined?null:callback.arg)}}}function demangle(func){return func}function demangleAll(text){var regex=/\b_Z[\w\d_]+/g;return text.replace(regex,function(x){var y=demangle(x);return x===y?x:y+" ["+x+"]"})}var wasmTableMirror=[];function getWasmTableEntry(funcPtr){var func=wasmTableMirror[funcPtr];if(!func){if(funcPtr>=wasmTableMirror.length)wasmTableMirror.length=funcPtr+1;wasmTableMirror[funcPtr]=func=wasmTable.get(funcPtr)}return func}function jsStackTrace(){var error=new Error;if(!error.stack){try{throw new Error}catch(e){error=e}if(!error.stack){return"(no stack trace available)"}}return error.stack.toString()}function setWasmTableEntry(idx,func){wasmTable.set(idx,func);wasmTableMirror[idx]=func}function ___cxa_allocate_exception(size){return _malloc(size+16)+16}function ExceptionInfo(excPtr){this.excPtr=excPtr;this.ptr=excPtr-16;this.set_type=function(type){HEAP32[this.ptr+4>>2]=type};this.get_type=function(){return HEAP32[this.ptr+4>>2]};this.set_destructor=function(destructor){HEAP32[this.ptr+8>>2]=destructor};this.get_destructor=function(){return HEAP32[this.ptr+8>>2]};this.set_refcount=function(refcount){HEAP32[this.ptr>>2]=refcount};this.set_caught=function(caught){caught=caught?1:0;HEAP8[this.ptr+12>>0]=caught};this.get_caught=function(){return HEAP8[this.ptr+12>>0]!=0};this.set_rethrown=function(rethrown){rethrown=rethrown?1:0;HEAP8[this.ptr+13>>0]=rethrown};this.get_rethrown=function(){return HEAP8[this.ptr+13>>0]!=0};this.init=function(type,destructor){this.set_type(type);this.set_destructor(destructor);this.set_refcount(0);this.set_caught(false);this.set_rethrown(false)};this.add_ref=function(){var value=HEAP32[this.ptr>>2];HEAP32[this.ptr>>2]=value+1};this.release_ref=function(){var prev=HEAP32[this.ptr>>2];HEAP32[this.ptr>>2]=prev-1;return prev===1}}var exceptionLast=0;var uncaughtExceptionCount=0;function ___cxa_throw(ptr,type,destructor){var info=new ExceptionInfo(ptr);info.init(type,destructor);exceptionLast=ptr;uncaughtExceptionCount++;throw ptr}function __embind_register_bigint(primitiveType,name,size,minRange,maxRange){}function getShiftFromSize(size){switch(size){case 1:return 0;case 2:return 1;case 4:return 2;case 8:return 3;default:throw new TypeError("Unknown type size: "+size)}}function embind_init_charCodes(){var codes=new Array(256);for(var i=0;i<256;++i){codes[i]=String.fromCharCode(i)}embind_charCodes=codes}var embind_charCodes=undefined;function readLatin1String(ptr){var ret="";var c=ptr;while(HEAPU8[c]){ret+=embind_charCodes[HEAPU8[c++]]}return ret}var awaitingDependencies={};var registeredTypes={};var typeDependencies={};var char_0=48;var char_9=57;function makeLegalFunctionName(name){if(undefined===name){return"_unknown"}name=name.replace(/[^a-zA-Z0-9_]/g,"$");var f=name.charCodeAt(0);if(f>=char_0&&f<=char_9){return"_"+name}else{return name}}function createNamedFunction(name,body){name=makeLegalFunctionName(name);return new Function("body","return function "+name+"() {\n"+'    "use strict";'+"    return body.apply(this, arguments);\n"+"};\n")(body)}function extendError(baseErrorType,errorName){var errorClass=createNamedFunction(errorName,function(message){this.name=errorName;this.message=message;var stack=new Error(message).stack;if(stack!==undefined){this.stack=this.toString()+"\n"+stack.replace(/^Error(:[^\n]*)?\n/,"")}});errorClass.prototype=Object.create(baseErrorType.prototype);errorClass.prototype.constructor=errorClass;errorClass.prototype.toString=function(){if(this.message===undefined){return this.name}else{return this.name+": "+this.message}};return errorClass}var BindingError=undefined;function throwBindingError(message){throw new BindingError(message)}var InternalError=undefined;function throwInternalError(message){throw new InternalError(message)}function whenDependentTypesAreResolved(myTypes,dependentTypes,getTypeConverters){myTypes.forEach(function(type){typeDependencies[type]=dependentTypes});function onComplete(typeConverters){var myTypeConverters=getTypeConverters(typeConverters);if(myTypeConverters.length!==myTypes.length){throwInternalError("Mismatched type converter count")}for(var i=0;i<myTypes.length;++i){registerType(myTypes[i],myTypeConverters[i])}}var typeConverters=new Array(dependentTypes.length);var unregisteredTypes=[];var registered=0;dependentTypes.forEach(function(dt,i){if(registeredTypes.hasOwnProperty(dt)){typeConverters[i]=registeredTypes[dt]}else{unregisteredTypes.push(dt);if(!awaitingDependencies.hasOwnProperty(dt)){awaitingDependencies[dt]=[]}awaitingDependencies[dt].push(function(){typeConverters[i]=registeredTypes[dt];++registered;if(registered===unregisteredTypes.length){onComplete(typeConverters)}})}});if(0===unregisteredTypes.length){onComplete(typeConverters)}}function registerType(rawType,registeredInstance,options={}){if(!("argPackAdvance"in registeredInstance)){throw new TypeError("registerType registeredInstance requires argPackAdvance")}var name=registeredInstance.name;if(!rawType){throwBindingError('type "'+name+'" must have a positive integer typeid pointer')}if(registeredTypes.hasOwnProperty(rawType)){if(options.ignoreDuplicateRegistrations){return}else{throwBindingError("Cannot register type '"+name+"' twice")}}registeredTypes[rawType]=registeredInstance;delete typeDependencies[rawType];if(awaitingDependencies.hasOwnProperty(rawType)){var callbacks=awaitingDependencies[rawType];delete awaitingDependencies[rawType];callbacks.forEach(function(cb){cb()})}}function __embind_register_bool(rawType,name,size,trueValue,falseValue){var shift=getShiftFromSize(size);name=readLatin1String(name);registerType(rawType,{name:name,"fromWireType":function(wt){return!!wt},"toWireType":function(destructors,o){return o?trueValue:falseValue},"argPackAdvance":8,"readValueFromPointer":function(pointer){var heap;if(size===1){heap=HEAP8}else if(size===2){heap=HEAP16}else if(size===4){heap=HEAP32}else{throw new TypeError("Unknown boolean type size: "+name)}return this["fromWireType"](heap[pointer>>shift])},destructorFunction:null})}function ClassHandle_isAliasOf(other){if(!(this instanceof ClassHandle)){return false}if(!(other instanceof ClassHandle)){return false}var leftClass=this.$$.ptrType.registeredClass;var left=this.$$.ptr;var rightClass=other.$$.ptrType.registeredClass;var right=other.$$.ptr;while(leftClass.baseClass){left=leftClass.upcast(left);leftClass=leftClass.baseClass}while(rightClass.baseClass){right=rightClass.upcast(right);rightClass=rightClass.baseClass}return leftClass===rightClass&&left===right}function shallowCopyInternalPointer(o){return{count:o.count,deleteScheduled:o.deleteScheduled,preservePointerOnDelete:o.preservePointerOnDelete,ptr:o.ptr,ptrType:o.ptrType,smartPtr:o.smartPtr,smartPtrType:o.smartPtrType}}function throwInstanceAlreadyDeleted(obj){function getInstanceTypeName(handle){return handle.$$.ptrType.registeredClass.name}throwBindingError(getInstanceTypeName(obj)+" instance already deleted")}var finalizationRegistry=false;function detachFinalizer(handle){}function runDestructor($$){if($$.smartPtr){$$.smartPtrType.rawDestructor($$.smartPtr)}else{$$.ptrType.registeredClass.rawDestructor($$.ptr)}}function releaseClassHandle($$){$$.count.value-=1;var toDelete=0===$$.count.value;if(toDelete){runDestructor($$)}}function downcastPointer(ptr,ptrClass,desiredClass){if(ptrClass===desiredClass){return ptr}if(undefined===desiredClass.baseClass){return null}var rv=downcastPointer(ptr,ptrClass,desiredClass.baseClass);if(rv===null){return null}return desiredClass.downcast(rv)}var registeredPointers={};function getInheritedInstanceCount(){return Object.keys(registeredInstances).length}function getLiveInheritedInstances(){var rv=[];for(var k in registeredInstances){if(registeredInstances.hasOwnProperty(k)){rv.push(registeredInstances[k])}}return rv}var deletionQueue=[];function flushPendingDeletes(){while(deletionQueue.length){var obj=deletionQueue.pop();obj.$$.deleteScheduled=false;obj["delete"]()}}var delayFunction=undefined;function setDelayFunction(fn){delayFunction=fn;if(deletionQueue.length&&delayFunction){delayFunction(flushPendingDeletes)}}function init_embind(){Module["getInheritedInstanceCount"]=getInheritedInstanceCount;Module["getLiveInheritedInstances"]=getLiveInheritedInstances;Module["flushPendingDeletes"]=flushPendingDeletes;Module["setDelayFunction"]=setDelayFunction}var registeredInstances={};function getBasestPointer(class_,ptr){if(ptr===undefined){throwBindingError("ptr should not be undefined")}while(class_.baseClass){ptr=class_.upcast(ptr);class_=class_.baseClass}return ptr}function getInheritedInstance(class_,ptr){ptr=getBasestPointer(class_,ptr);return registeredInstances[ptr]}function makeClassHandle(prototype,record){if(!record.ptrType||!record.ptr){throwInternalError("makeClassHandle requires ptr and ptrType")}var hasSmartPtrType=!!record.smartPtrType;var hasSmartPtr=!!record.smartPtr;if(hasSmartPtrType!==hasSmartPtr){throwInternalError("Both smartPtrType and smartPtr must be specified")}record.count={value:1};return attachFinalizer(Object.create(prototype,{$$:{value:record}}))}function RegisteredPointer_fromWireType(ptr){var rawPointer=this.getPointee(ptr);if(!rawPointer){this.destructor(ptr);return null}var registeredInstance=getInheritedInstance(this.registeredClass,rawPointer);if(undefined!==registeredInstance){if(0===registeredInstance.$$.count.value){registeredInstance.$$.ptr=rawPointer;registeredInstance.$$.smartPtr=ptr;return registeredInstance["clone"]()}else{var rv=registeredInstance["clone"]();this.destructor(ptr);return rv}}function makeDefaultHandle(){if(this.isSmartPointer){return makeClassHandle(this.registeredClass.instancePrototype,{ptrType:this.pointeeType,ptr:rawPointer,smartPtrType:this,smartPtr:ptr})}else{return makeClassHandle(this.registeredClass.instancePrototype,{ptrType:this,ptr:ptr})}}var actualType=this.registeredClass.getActualType(rawPointer);var registeredPointerRecord=registeredPointers[actualType];if(!registeredPointerRecord){return makeDefaultHandle.call(this)}var toType;if(this.isConst){toType=registeredPointerRecord.constPointerType}else{toType=registeredPointerRecord.pointerType}var dp=downcastPointer(rawPointer,this.registeredClass,toType.registeredClass);if(dp===null){return makeDefaultHandle.call(this)}if(this.isSmartPointer){return makeClassHandle(toType.registeredClass.instancePrototype,{ptrType:toType,ptr:dp,smartPtrType:this,smartPtr:ptr})}else{return makeClassHandle(toType.registeredClass.instancePrototype,{ptrType:toType,ptr:dp})}}function attachFinalizer(handle){if("undefined"===typeof FinalizationRegistry){attachFinalizer=(handle=>handle);return handle}finalizationRegistry=new FinalizationRegistry(info=>{releaseClassHandle(info.$$)});attachFinalizer=(handle=>{var $$=handle.$$;var hasSmartPtr=!!$$.smartPtr;if(hasSmartPtr){var info={$$:$$};finalizationRegistry.register(handle,info,handle)}return handle});detachFinalizer=(handle=>finalizationRegistry.unregister(handle));return attachFinalizer(handle)}function ClassHandle_clone(){if(!this.$$.ptr){throwInstanceAlreadyDeleted(this)}if(this.$$.preservePointerOnDelete){this.$$.count.value+=1;return this}else{var clone=attachFinalizer(Object.create(Object.getPrototypeOf(this),{$$:{value:shallowCopyInternalPointer(this.$$)}}));clone.$$.count.value+=1;clone.$$.deleteScheduled=false;return clone}}function ClassHandle_delete(){if(!this.$$.ptr){throwInstanceAlreadyDeleted(this)}if(this.$$.deleteScheduled&&!this.$$.preservePointerOnDelete){throwBindingError("Object already scheduled for deletion")}detachFinalizer(this);releaseClassHandle(this.$$);if(!this.$$.preservePointerOnDelete){this.$$.smartPtr=undefined;this.$$.ptr=undefined}}function ClassHandle_isDeleted(){return!this.$$.ptr}function ClassHandle_deleteLater(){if(!this.$$.ptr){throwInstanceAlreadyDeleted(this)}if(this.$$.deleteScheduled&&!this.$$.preservePointerOnDelete){throwBindingError("Object already scheduled for deletion")}deletionQueue.push(this);if(deletionQueue.length===1&&delayFunction){delayFunction(flushPendingDeletes)}this.$$.deleteScheduled=true;return this}function init_ClassHandle(){ClassHandle.prototype["isAliasOf"]=ClassHandle_isAliasOf;ClassHandle.prototype["clone"]=ClassHandle_clone;ClassHandle.prototype["delete"]=ClassHandle_delete;ClassHandle.prototype["isDeleted"]=ClassHandle_isDeleted;ClassHandle.prototype["deleteLater"]=ClassHandle_deleteLater}function ClassHandle(){}function ensureOverloadTable(proto,methodName,humanName){if(undefined===proto[methodName].overloadTable){var prevFunc=proto[methodName];proto[methodName]=function(){if(!proto[methodName].overloadTable.hasOwnProperty(arguments.length)){throwBindingError("Function '"+humanName+"' called with an invalid number of arguments ("+arguments.length+") - expects one of ("+proto[methodName].overloadTable+")!")}return proto[methodName].overloadTable[arguments.length].apply(this,arguments)};proto[methodName].overloadTable=[];proto[methodName].overloadTable[prevFunc.argCount]=prevFunc}}function exposePublicSymbol(name,value,numArguments){if(Module.hasOwnProperty(name)){if(undefined===numArguments||undefined!==Module[name].overloadTable&&undefined!==Module[name].overloadTable[numArguments]){throwBindingError("Cannot register public name '"+name+"' twice")}ensureOverloadTable(Module,name,name);if(Module.hasOwnProperty(numArguments)){throwBindingError("Cannot register multiple overloads of a function with the same number of arguments ("+numArguments+")!")}Module[name].overloadTable[numArguments]=value}else{Module[name]=value;if(undefined!==numArguments){Module[name].numArguments=numArguments}}}function RegisteredClass(name,constructor,instancePrototype,rawDestructor,baseClass,getActualType,upcast,downcast){this.name=name;this.constructor=constructor;this.instancePrototype=instancePrototype;this.rawDestructor=rawDestructor;this.baseClass=baseClass;this.getActualType=getActualType;this.upcast=upcast;this.downcast=downcast;this.pureVirtualFunctions=[]}function upcastPointer(ptr,ptrClass,desiredClass){while(ptrClass!==desiredClass){if(!ptrClass.upcast){throwBindingError("Expected null or instance of "+desiredClass.name+", got an instance of "+ptrClass.name)}ptr=ptrClass.upcast(ptr);ptrClass=ptrClass.baseClass}return ptr}function constNoSmartPtrRawPointerToWireType(destructors,handle){if(handle===null){if(this.isReference){throwBindingError("null is not a valid "+this.name)}return 0}if(!handle.$$){throwBindingError('Cannot pass "'+_embind_repr(handle)+'" as a '+this.name)}if(!handle.$$.ptr){throwBindingError("Cannot pass deleted object as a pointer of type "+this.name)}var handleClass=handle.$$.ptrType.registeredClass;var ptr=upcastPointer(handle.$$.ptr,handleClass,this.registeredClass);return ptr}function genericPointerToWireType(destructors,handle){var ptr;if(handle===null){if(this.isReference){throwBindingError("null is not a valid "+this.name)}if(this.isSmartPointer){ptr=this.rawConstructor();if(destructors!==null){destructors.push(this.rawDestructor,ptr)}return ptr}else{return 0}}if(!handle.$$){throwBindingError('Cannot pass "'+_embind_repr(handle)+'" as a '+this.name)}if(!handle.$$.ptr){throwBindingError("Cannot pass deleted object as a pointer of type "+this.name)}if(!this.isConst&&handle.$$.ptrType.isConst){throwBindingError("Cannot convert argument of type "+(handle.$$.smartPtrType?handle.$$.smartPtrType.name:handle.$$.ptrType.name)+" to parameter type "+this.name)}var handleClass=handle.$$.ptrType.registeredClass;ptr=upcastPointer(handle.$$.ptr,handleClass,this.registeredClass);if(this.isSmartPointer){if(undefined===handle.$$.smartPtr){throwBindingError("Passing raw pointer to smart pointer is illegal")}switch(this.sharingPolicy){case 0:if(handle.$$.smartPtrType===this){ptr=handle.$$.smartPtr}else{throwBindingError("Cannot convert argument of type "+(handle.$$.smartPtrType?handle.$$.smartPtrType.name:handle.$$.ptrType.name)+" to parameter type "+this.name)}break;case 1:ptr=handle.$$.smartPtr;break;case 2:if(handle.$$.smartPtrType===this){ptr=handle.$$.smartPtr}else{var clonedHandle=handle["clone"]();ptr=this.rawShare(ptr,Emval.toHandle(function(){clonedHandle["delete"]()}));if(destructors!==null){destructors.push(this.rawDestructor,ptr)}}break;default:throwBindingError("Unsupporting sharing policy")}}return ptr}function nonConstNoSmartPtrRawPointerToWireType(destructors,handle){if(handle===null){if(this.isReference){throwBindingError("null is not a valid "+this.name)}return 0}if(!handle.$$){throwBindingError('Cannot pass "'+_embind_repr(handle)+'" as a '+this.name)}if(!handle.$$.ptr){throwBindingError("Cannot pass deleted object as a pointer of type "+this.name)}if(handle.$$.ptrType.isConst){throwBindingError("Cannot convert argument of type "+handle.$$.ptrType.name+" to parameter type "+this.name)}var handleClass=handle.$$.ptrType.registeredClass;var ptr=upcastPointer(handle.$$.ptr,handleClass,this.registeredClass);return ptr}function simpleReadValueFromPointer(pointer){return this["fromWireType"](HEAPU32[pointer>>2])}function RegisteredPointer_getPointee(ptr){if(this.rawGetPointee){ptr=this.rawGetPointee(ptr)}return ptr}function RegisteredPointer_destructor(ptr){if(this.rawDestructor){this.rawDestructor(ptr)}}function RegisteredPointer_deleteObject(handle){if(handle!==null){handle["delete"]()}}function init_RegisteredPointer(){RegisteredPointer.prototype.getPointee=RegisteredPointer_getPointee;RegisteredPointer.prototype.destructor=RegisteredPointer_destructor;RegisteredPointer.prototype["argPackAdvance"]=8;RegisteredPointer.prototype["readValueFromPointer"]=simpleReadValueFromPointer;RegisteredPointer.prototype["deleteObject"]=RegisteredPointer_deleteObject;RegisteredPointer.prototype["fromWireType"]=RegisteredPointer_fromWireType}function RegisteredPointer(name,registeredClass,isReference,isConst,isSmartPointer,pointeeType,sharingPolicy,rawGetPointee,rawConstructor,rawShare,rawDestructor){this.name=name;this.registeredClass=registeredClass;this.isReference=isReference;this.isConst=isConst;this.isSmartPointer=isSmartPointer;this.pointeeType=pointeeType;this.sharingPolicy=sharingPolicy;this.rawGetPointee=rawGetPointee;this.rawConstructor=rawConstructor;this.rawShare=rawShare;this.rawDestructor=rawDestructor;if(!isSmartPointer&&registeredClass.baseClass===undefined){if(isConst){this["toWireType"]=constNoSmartPtrRawPointerToWireType;this.destructorFunction=null}else{this["toWireType"]=nonConstNoSmartPtrRawPointerToWireType;this.destructorFunction=null}}else{this["toWireType"]=genericPointerToWireType}}function replacePublicSymbol(name,value,numArguments){if(!Module.hasOwnProperty(name)){throwInternalError("Replacing nonexistant public symbol")}if(undefined!==Module[name].overloadTable&&undefined!==numArguments){Module[name].overloadTable[numArguments]=value}else{Module[name]=value;Module[name].argCount=numArguments}}function dynCallLegacy(sig,ptr,args){var f=Module["dynCall_"+sig];return args&&args.length?f.apply(null,[ptr].concat(args)):f.call(null,ptr)}function dynCall(sig,ptr,args){if(sig.includes("j")){return dynCallLegacy(sig,ptr,args)}return getWasmTableEntry(ptr).apply(null,args)}function getDynCaller(sig,ptr){var argCache=[];return function(){argCache.length=0;Object.assign(argCache,arguments);return dynCall(sig,ptr,argCache)}}function embind__requireFunction(signature,rawFunction){signature=readLatin1String(signature);function makeDynCaller(){if(signature.includes("j")){return getDynCaller(signature,rawFunction)}return getWasmTableEntry(rawFunction)}var fp=makeDynCaller();if(typeof fp!="function"){throwBindingError("unknown function pointer with signature "+signature+": "+rawFunction)}return fp}var UnboundTypeError=undefined;function getTypeName(type){var ptr=___getTypeName(type);var rv=readLatin1String(ptr);_free(ptr);return rv}function throwUnboundTypeError(message,types){var unboundTypes=[];var seen={};function visit(type){if(seen[type]){return}if(registeredTypes[type]){return}if(typeDependencies[type]){typeDependencies[type].forEach(visit);return}unboundTypes.push(type);seen[type]=true}types.forEach(visit);throw new UnboundTypeError(message+": "+unboundTypes.map(getTypeName).join([", "]))}function __embind_register_class(rawType,rawPointerType,rawConstPointerType,baseClassRawType,getActualTypeSignature,getActualType,upcastSignature,upcast,downcastSignature,downcast,name,destructorSignature,rawDestructor){name=readLatin1String(name);getActualType=embind__requireFunction(getActualTypeSignature,getActualType);if(upcast){upcast=embind__requireFunction(upcastSignature,upcast)}if(downcast){downcast=embind__requireFunction(downcastSignature,downcast)}rawDestructor=embind__requireFunction(destructorSignature,rawDestructor);var legalFunctionName=makeLegalFunctionName(name);exposePublicSymbol(legalFunctionName,function(){throwUnboundTypeError("Cannot construct "+name+" due to unbound types",[baseClassRawType])});whenDependentTypesAreResolved([rawType,rawPointerType,rawConstPointerType],baseClassRawType?[baseClassRawType]:[],function(base){base=base[0];var baseClass;var basePrototype;if(baseClassRawType){baseClass=base.registeredClass;basePrototype=baseClass.instancePrototype}else{basePrototype=ClassHandle.prototype}var constructor=createNamedFunction(legalFunctionName,function(){if(Object.getPrototypeOf(this)!==instancePrototype){throw new BindingError("Use 'new' to construct "+name)}if(undefined===registeredClass.constructor_body){throw new BindingError(name+" has no accessible constructor")}var body=registeredClass.constructor_body[arguments.length];if(undefined===body){throw new BindingError("Tried to invoke ctor of "+name+" with invalid number of parameters ("+arguments.length+") - expected ("+Object.keys(registeredClass.constructor_body).toString()+") parameters instead!")}return body.apply(this,arguments)});var instancePrototype=Object.create(basePrototype,{constructor:{value:constructor}});constructor.prototype=instancePrototype;var registeredClass=new RegisteredClass(name,constructor,instancePrototype,rawDestructor,baseClass,getActualType,upcast,downcast);var referenceConverter=new RegisteredPointer(name,registeredClass,true,false,false);var pointerConverter=new RegisteredPointer(name+"*",registeredClass,false,false,false);var constPointerConverter=new RegisteredPointer(name+" const*",registeredClass,false,true,false);registeredPointers[rawType]={pointerType:pointerConverter,constPointerType:constPointerConverter};replacePublicSymbol(legalFunctionName,constructor);return[referenceConverter,pointerConverter,constPointerConverter]})}function heap32VectorToArray(count,firstElement){var array=[];for(var i=0;i<count;i++){array.push(HEAP32[(firstElement>>2)+i])}return array}function runDestructors(destructors){while(destructors.length){var ptr=destructors.pop();var del=destructors.pop();del(ptr)}}function __embind_register_class_constructor(rawClassType,argCount,rawArgTypesAddr,invokerSignature,invoker,rawConstructor){assert(argCount>0);var rawArgTypes=heap32VectorToArray(argCount,rawArgTypesAddr);invoker=embind__requireFunction(invokerSignature,invoker);whenDependentTypesAreResolved([],[rawClassType],function(classType){classType=classType[0];var humanName="constructor "+classType.name;if(undefined===classType.registeredClass.constructor_body){classType.registeredClass.constructor_body=[]}if(undefined!==classType.registeredClass.constructor_body[argCount-1]){throw new BindingError("Cannot register multiple constructors with identical number of parameters ("+(argCount-1)+") for class '"+classType.name+"'! Overload resolution is currently only performed using the parameter count, not actual type info!")}classType.registeredClass.constructor_body[argCount-1]=(()=>{throwUnboundTypeError("Cannot construct "+classType.name+" due to unbound types",rawArgTypes)});whenDependentTypesAreResolved([],rawArgTypes,function(argTypes){argTypes.splice(1,0,null);classType.registeredClass.constructor_body[argCount-1]=craftInvokerFunction(humanName,argTypes,null,invoker,rawConstructor);return[]});return[]})}function new_(constructor,argumentList){if(!(constructor instanceof Function)){throw new TypeError("new_ called with constructor type "+typeof constructor+" which is not a function")}var dummy=createNamedFunction(constructor.name||"unknownFunctionName",function(){});dummy.prototype=constructor.prototype;var obj=new dummy;var r=constructor.apply(obj,argumentList);return r instanceof Object?r:obj}function craftInvokerFunction(humanName,argTypes,classType,cppInvokerFunc,cppTargetFunc){var argCount=argTypes.length;if(argCount<2){throwBindingError("argTypes array size mismatch! Must at least get return value and 'this' types!")}var isClassMethodFunc=argTypes[1]!==null&&classType!==null;var needsDestructorStack=false;for(var i=1;i<argTypes.length;++i){if(argTypes[i]!==null&&argTypes[i].destructorFunction===undefined){needsDestructorStack=true;break}}var returns=argTypes[0].name!=="void";var argsList="";var argsListWired="";for(var i=0;i<argCount-2;++i){argsList+=(i!==0?", ":"")+"arg"+i;argsListWired+=(i!==0?", ":"")+"arg"+i+"Wired"}var invokerFnBody="return function "+makeLegalFunctionName(humanName)+"("+argsList+") {\n"+"if (arguments.length !== "+(argCount-2)+") {\n"+"throwBindingError('function "+humanName+" called with ' + arguments.length + ' arguments, expected "+(argCount-2)+" args!');\n"+"}\n";if(needsDestructorStack){invokerFnBody+="var destructors = [];\n"}var dtorStack=needsDestructorStack?"destructors":"null";var args1=["throwBindingError","invoker","fn","runDestructors","retType","classParam"];var args2=[throwBindingError,cppInvokerFunc,cppTargetFunc,runDestructors,argTypes[0],argTypes[1]];if(isClassMethodFunc){invokerFnBody+="var thisWired = classParam.toWireType("+dtorStack+", this);\n"}for(var i=0;i<argCount-2;++i){invokerFnBody+="var arg"+i+"Wired = argType"+i+".toWireType("+dtorStack+", arg"+i+"); // "+argTypes[i+2].name+"\n";args1.push("argType"+i);args2.push(argTypes[i+2])}if(isClassMethodFunc){argsListWired="thisWired"+(argsListWired.length>0?", ":"")+argsListWired}invokerFnBody+=(returns?"var rv = ":"")+"invoker(fn"+(argsListWired.length>0?", ":"")+argsListWired+");\n";if(needsDestructorStack){invokerFnBody+="runDestructors(destructors);\n"}else{for(var i=isClassMethodFunc?1:2;i<argTypes.length;++i){var paramName=i===1?"thisWired":"arg"+(i-2)+"Wired";if(argTypes[i].destructorFunction!==null){invokerFnBody+=paramName+"_dtor("+paramName+"); // "+argTypes[i].name+"\n";args1.push(paramName+"_dtor");args2.push(argTypes[i].destructorFunction)}}}if(returns){invokerFnBody+="var ret = retType.fromWireType(rv);\n"+"return ret;\n"}else{}invokerFnBody+="}\n";args1.push(invokerFnBody);var invokerFunction=new_(Function,args1).apply(null,args2);return invokerFunction}function __embind_register_class_function(rawClassType,methodName,argCount,rawArgTypesAddr,invokerSignature,rawInvoker,context,isPureVirtual){var rawArgTypes=heap32VectorToArray(argCount,rawArgTypesAddr);methodName=readLatin1String(methodName);rawInvoker=embind__requireFunction(invokerSignature,rawInvoker);whenDependentTypesAreResolved([],[rawClassType],function(classType){classType=classType[0];var humanName=classType.name+"."+methodName;if(methodName.startsWith("@@")){methodName=Symbol[methodName.substring(2)]}if(isPureVirtual){classType.registeredClass.pureVirtualFunctions.push(methodName)}function unboundTypesHandler(){throwUnboundTypeError("Cannot call "+humanName+" due to unbound types",rawArgTypes)}var proto=classType.registeredClass.instancePrototype;var method=proto[methodName];if(undefined===method||undefined===method.overloadTable&&method.className!==classType.name&&method.argCount===argCount-2){unboundTypesHandler.argCount=argCount-2;unboundTypesHandler.className=classType.name;proto[methodName]=unboundTypesHandler}else{ensureOverloadTable(proto,methodName,humanName);proto[methodName].overloadTable[argCount-2]=unboundTypesHandler}whenDependentTypesAreResolved([],rawArgTypes,function(argTypes){var memberFunction=craftInvokerFunction(humanName,argTypes,classType,rawInvoker,context);if(undefined===proto[methodName].overloadTable){memberFunction.argCount=argCount-2;proto[methodName]=memberFunction}else{proto[methodName].overloadTable[argCount-2]=memberFunction}return[]});return[]})}var emval_free_list=[];var emval_handle_array=[{},{value:undefined},{value:null},{value:true},{value:false}];function __emval_decref(handle){if(handle>4&&0===--emval_handle_array[handle].refcount){emval_handle_array[handle]=undefined;emval_free_list.push(handle)}}function count_emval_handles(){var count=0;for(var i=5;i<emval_handle_array.length;++i){if(emval_handle_array[i]!==undefined){++count}}return count}function get_first_emval(){for(var i=5;i<emval_handle_array.length;++i){if(emval_handle_array[i]!==undefined){return emval_handle_array[i]}}return null}function init_emval(){Module["count_emval_handles"]=count_emval_handles;Module["get_first_emval"]=get_first_emval}var Emval={toValue:function(handle){if(!handle){throwBindingError("Cannot use deleted val. handle = "+handle)}return emval_handle_array[handle].value},toHandle:function(value){switch(value){case undefined:{return 1}case null:{return 2}case true:{return 3}case false:{return 4}default:{var handle=emval_free_list.length?emval_free_list.pop():emval_handle_array.length;emval_handle_array[handle]={refcount:1,value:value};return handle}}}};function __embind_register_emval(rawType,name){name=readLatin1String(name);registerType(rawType,{name:name,"fromWireType":function(handle){var rv=Emval.toValue(handle);__emval_decref(handle);return rv},"toWireType":function(destructors,value){return Emval.toHandle(value)},"argPackAdvance":8,"readValueFromPointer":simpleReadValueFromPointer,destructorFunction:null})}function _embind_repr(v){if(v===null){return"null"}var t=typeof v;if(t==="object"||t==="array"||t==="function"){return v.toString()}else{return""+v}}function floatReadValueFromPointer(name,shift){switch(shift){case 2:return function(pointer){return this["fromWireType"](HEAPF32[pointer>>2])};case 3:return function(pointer){return this["fromWireType"](HEAPF64[pointer>>3])};default:throw new TypeError("Unknown float type: "+name)}}function __embind_register_float(rawType,name,size){var shift=getShiftFromSize(size);name=readLatin1String(name);registerType(rawType,{name:name,"fromWireType":function(value){return value},"toWireType":function(destructors,value){return value},"argPackAdvance":8,"readValueFromPointer":floatReadValueFromPointer(name,shift),destructorFunction:null})}function integerReadValueFromPointer(name,shift,signed){switch(shift){case 0:return signed?function readS8FromPointer(pointer){return HEAP8[pointer]}:function readU8FromPointer(pointer){return HEAPU8[pointer]};case 1:return signed?function readS16FromPointer(pointer){return HEAP16[pointer>>1]}:function readU16FromPointer(pointer){return HEAPU16[pointer>>1]};case 2:return signed?function readS32FromPointer(pointer){return HEAP32[pointer>>2]}:function readU32FromPointer(pointer){return HEAPU32[pointer>>2]};default:throw new TypeError("Unknown integer type: "+name)}}function __embind_register_integer(primitiveType,name,size,minRange,maxRange){name=readLatin1String(name);if(maxRange===-1){maxRange=4294967295}var shift=getShiftFromSize(size);var fromWireType=value=>value;if(minRange===0){var bitshift=32-8*size;fromWireType=(value=>value<<bitshift>>>bitshift)}var isUnsignedType=name.includes("unsigned");var checkAssertions=(value,toTypeName)=>{};var toWireType;if(isUnsignedType){toWireType=function(destructors,value){checkAssertions(value,this.name);return value>>>0}}else{toWireType=function(destructors,value){checkAssertions(value,this.name);return value}}registerType(primitiveType,{name:name,"fromWireType":fromWireType,"toWireType":toWireType,"argPackAdvance":8,"readValueFromPointer":integerReadValueFromPointer(name,shift,minRange!==0),destructorFunction:null})}function __embind_register_memory_view(rawType,dataTypeIndex,name){var typeMapping=[Int8Array,Uint8Array,Int16Array,Uint16Array,Int32Array,Uint32Array,Float32Array,Float64Array];var TA=typeMapping[dataTypeIndex];function decodeMemoryView(handle){handle=handle>>2;var heap=HEAPU32;var size=heap[handle];var data=heap[handle+1];return new TA(buffer,data,size)}name=readLatin1String(name);registerType(rawType,{name:name,"fromWireType":decodeMemoryView,"argPackAdvance":8,"readValueFromPointer":decodeMemoryView},{ignoreDuplicateRegistrations:true})}function __embind_register_std_string(rawType,name){name=readLatin1String(name);var stdStringIsUTF8=name==="std::string";registerType(rawType,{name:name,"fromWireType":function(value){var length=HEAPU32[value>>2];var str;if(stdStringIsUTF8){var decodeStartPtr=value+4;for(var i=0;i<=length;++i){var currentBytePtr=value+4+i;if(i==length||HEAPU8[currentBytePtr]==0){var maxRead=currentBytePtr-decodeStartPtr;var stringSegment=UTF8ToString(decodeStartPtr,maxRead);if(str===undefined){str=stringSegment}else{str+=String.fromCharCode(0);str+=stringSegment}decodeStartPtr=currentBytePtr+1}}}else{var a=new Array(length);for(var i=0;i<length;++i){a[i]=String.fromCharCode(HEAPU8[value+4+i])}str=a.join("")}_free(value);return str},"toWireType":function(destructors,value){if(value instanceof ArrayBuffer){value=new Uint8Array(value)}var getLength;var valueIsOfTypeString=typeof value=="string";if(!(valueIsOfTypeString||value instanceof Uint8Array||value instanceof Uint8ClampedArray||value instanceof Int8Array)){throwBindingError("Cannot pass non-string to std::string")}if(stdStringIsUTF8&&valueIsOfTypeString){getLength=(()=>lengthBytesUTF8(value))}else{getLength=(()=>value.length)}var length=getLength();var ptr=_malloc(4+length+1);HEAPU32[ptr>>2]=length;if(stdStringIsUTF8&&valueIsOfTypeString){stringToUTF8(value,ptr+4,length+1)}else{if(valueIsOfTypeString){for(var i=0;i<length;++i){var charCode=value.charCodeAt(i);if(charCode>255){_free(ptr);throwBindingError("String has UTF-16 code units that do not fit in 8 bits")}HEAPU8[ptr+4+i]=charCode}}else{for(var i=0;i<length;++i){HEAPU8[ptr+4+i]=value[i]}}}if(destructors!==null){destructors.push(_free,ptr)}return ptr},"argPackAdvance":8,"readValueFromPointer":simpleReadValueFromPointer,destructorFunction:function(ptr){_free(ptr)}})}function __embind_register_std_wstring(rawType,charSize,name){name=readLatin1String(name);var decodeString,encodeString,getHeap,lengthBytesUTF,shift;if(charSize===2){decodeString=UTF16ToString;encodeString=stringToUTF16;lengthBytesUTF=lengthBytesUTF16;getHeap=(()=>HEAPU16);shift=1}else if(charSize===4){decodeString=UTF32ToString;encodeString=stringToUTF32;lengthBytesUTF=lengthBytesUTF32;getHeap=(()=>HEAPU32);shift=2}registerType(rawType,{name:name,"fromWireType":function(value){var length=HEAPU32[value>>2];var HEAP=getHeap();var str;var decodeStartPtr=value+4;for(var i=0;i<=length;++i){var currentBytePtr=value+4+i*charSize;if(i==length||HEAP[currentBytePtr>>shift]==0){var maxReadBytes=currentBytePtr-decodeStartPtr;var stringSegment=decodeString(decodeStartPtr,maxReadBytes);if(str===undefined){str=stringSegment}else{str+=String.fromCharCode(0);str+=stringSegment}decodeStartPtr=currentBytePtr+charSize}}_free(value);return str},"toWireType":function(destructors,value){if(!(typeof value=="string")){throwBindingError("Cannot pass non-string to C++ string type "+name)}var length=lengthBytesUTF(value);var ptr=_malloc(4+length+charSize);HEAPU32[ptr>>2]=length>>shift;encodeString(value,ptr+4,length+charSize);if(destructors!==null){destructors.push(_free,ptr)}return ptr},"argPackAdvance":8,"readValueFromPointer":simpleReadValueFromPointer,destructorFunction:function(ptr){_free(ptr)}})}function __embind_register_void(rawType,name){name=readLatin1String(name);registerType(rawType,{isVoid:true,name:name,"argPackAdvance":0,"fromWireType":function(){return undefined},"toWireType":function(destructors,o){return undefined}})}var emval_symbols={};function getStringOrSymbol(address){var symbol=emval_symbols[address];if(symbol===undefined){return readLatin1String(address)}else{return symbol}}var emval_methodCallers=[];function __emval_call_void_method(caller,handle,methodName,args){caller=emval_methodCallers[caller];handle=Emval.toValue(handle);methodName=getStringOrSymbol(methodName);caller(handle,methodName,null,args)}function __emval_addMethodCaller(caller){var id=emval_methodCallers.length;emval_methodCallers.push(caller);return id}function requireRegisteredType(rawType,humanName){var impl=registeredTypes[rawType];if(undefined===impl){throwBindingError(humanName+" has unknown type "+getTypeName(rawType))}return impl}function __emval_lookupTypes(argCount,argTypes){var a=new Array(argCount);for(var i=0;i<argCount;++i){a[i]=requireRegisteredType(HEAP32[(argTypes>>2)+i],"parameter "+i)}return a}var emval_registeredMethods=[];function __emval_get_method_caller(argCount,argTypes){var types=__emval_lookupTypes(argCount,argTypes);var retType=types[0];var signatureName=retType.name+"_$"+types.slice(1).map(function(t){return t.name}).join("_")+"$";var returnId=emval_registeredMethods[signatureName];if(returnId!==undefined){return returnId}var params=["retType"];var args=[retType];var argsList="";for(var i=0;i<argCount-1;++i){argsList+=(i!==0?", ":"")+"arg"+i;params.push("argType"+i);args.push(types[1+i])}var functionName=makeLegalFunctionName("methodCaller_"+signatureName);var functionBody="return function "+functionName+"(handle, name, destructors, args) {\n";var offset=0;for(var i=0;i<argCount-1;++i){functionBody+="    var arg"+i+" = argType"+i+".readValueFromPointer(args"+(offset?"+"+offset:"")+");\n";offset+=types[i+1]["argPackAdvance"]}functionBody+="    var rv = handle[name]("+argsList+");\n";for(var i=0;i<argCount-1;++i){if(types[i+1]["deleteObject"]){functionBody+="    argType"+i+".deleteObject(arg"+i+");\n"}}if(!retType.isVoid){functionBody+="    return retType.toWireType(destructors, rv);\n"}functionBody+="};\n";params.push(functionBody);var invokerFunction=new_(Function,params).apply(null,args);returnId=__emval_addMethodCaller(invokerFunction);emval_registeredMethods[signatureName]=returnId;return returnId}function __emval_incref(handle){if(handle>4){emval_handle_array[handle].refcount+=1}}function __emval_new_array(){return Emval.toHandle([])}function __emval_new_cstring(v){return Emval.toHandle(getStringOrSymbol(v))}function __emval_new_object(){return Emval.toHandle({})}function __emval_set_property(handle,key,value){handle=Emval.toValue(handle);key=Emval.toValue(key);value=Emval.toValue(value);handle[key]=value}function __emval_take_value(type,argv){type=requireRegisteredType(type,"_emval_take_value");var v=type["readValueFromPointer"](argv);return Emval.toHandle(v)}function _abort(){abort("")}function _emscripten_memcpy_big(dest,src,num){HEAPU8.copyWithin(dest,src,src+num)}function _emscripten_get_heap_max(){return 2147483648}function emscripten_realloc_buffer(size){try{wasmMemory.grow(size-buffer.byteLength+65535>>>16);updateGlobalBufferAndViews(wasmMemory.buffer);return 1}catch(e){}}function _emscripten_resize_heap(requestedSize){var oldSize=HEAPU8.length;requestedSize=requestedSize>>>0;var maxHeapSize=_emscripten_get_heap_max();if(requestedSize>maxHeapSize){return false}let alignUp=(x,multiple)=>x+(multiple-x%multiple)%multiple;for(var cutDown=1;cutDown<=4;cutDown*=2){var overGrownHeapSize=oldSize*(1+.2/cutDown);overGrownHeapSize=Math.min(overGrownHeapSize,requestedSize+100663296);var newSize=Math.min(maxHeapSize,alignUp(Math.max(requestedSize,overGrownHeapSize),65536));var replacement=emscripten_realloc_buffer(newSize);if(replacement){return true}}return false}embind_init_charCodes();BindingError=Module["BindingError"]=extendError(Error,"BindingError");InternalError=Module["InternalError"]=extendError(Error,"InternalError");init_ClassHandle();init_embind();init_RegisteredPointer();UnboundTypeError=Module["UnboundTypeError"]=extendError(Error,"UnboundTypeError");init_emval();var ASSERTIONS=false;function intArrayToString(array){var ret=[];for(var i=0;i<array.length;i++){var chr=array[i];if(chr>255){if(ASSERTIONS){assert(false,"Character code "+chr+" ("+String.fromCharCode(chr)+")  at offset "+i+" not in 0x00-0xFF.")}chr&=255}ret.push(String.fromCharCode(chr))}return ret.join("")}var decodeBase64=typeof atob=="function"?atob:function(input){var keyStr="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";var output="";var chr1,chr2,chr3;var enc1,enc2,enc3,enc4;var i=0;input=input.replace(/[^A-Za-z0-9\+\/\=]/g,"");do{enc1=keyStr.indexOf(input.charAt(i++));enc2=keyStr.indexOf(input.charAt(i++));enc3=keyStr.indexOf(input.charAt(i++));enc4=keyStr.indexOf(input.charAt(i++));chr1=enc1<<2|enc2>>4;chr2=(enc2&15)<<4|enc3>>2;chr3=(enc3&3)<<6|enc4;output=output+String.fromCharCode(chr1);if(enc3!==64){output=output+String.fromCharCode(chr2)}if(enc4!==64){output=output+String.fromCharCode(chr3)}}while(i<input.length);return output};function intArrayFromBase64(s){if(typeof ENVIRONMENT_IS_NODE=="boolean"&&ENVIRONMENT_IS_NODE){var buf=Buffer.from(s,"base64");return new Uint8Array(buf["buffer"],buf["byteOffset"],buf["byteLength"])}try{var decoded=decodeBase64(s);var bytes=new Uint8Array(decoded.length);for(var i=0;i<decoded.length;++i){bytes[i]=decoded.charCodeAt(i)}return bytes}catch(_){throw new Error("Converting base64 string to bytes failed.")}}function tryParseAsDataURI(filename){if(!isDataURI(filename)){return}return intArrayFromBase64(filename.slice(dataURIPrefix.length))}var asmLibraryArg={"__cxa_allocate_exception":___cxa_allocate_exception,"__cxa_throw":___cxa_throw,"_embind_register_bigint":__embind_register_bigint,"_embind_register_bool":__embind_register_bool,"_embind_register_class":__embind_register_class,"_embind_register_class_constructor":__embind_register_class_constructor,"_embind_register_class_function":__embind_register_class_function,"_embind_register_emval":__embind_register_emval,"_embind_register_float":__embind_register_float,"_embind_register_integer":__embind_register_integer,"_embind_register_memory_view":__embind_register_memory_view,"_embind_register_std_string":__embind_register_std_string,"_embind_register_std_wstring":__embind_register_std_wstring,"_embind_register_void":__embind_register_void,"_emval_call_void_method":__emval_call_void_method,"_emval_decref":__emval_decref,"_emval_get_method_caller":__emval_get_method_caller,"_emval_incref":__emval_incref,"_emval_new_array":__emval_new_array,"_emval_new_cstring":__emval_new_cstring,"_emval_new_object":__emval_new_object,"_emval_set_property":__emval_set_property,"_emval_take_value":__emval_take_value,"abort":_abort,"emscripten_memcpy_big":_emscripten_memcpy_big,"emscripten_resize_heap":_emscripten_resize_heap};var asm=createWasm();var ___wasm_call_ctors=Module["___wasm_call_ctors"]=function(){return(___wasm_call_ctors=Module["___wasm_call_ctors"]=Module["asm"]["__wasm_call_ctors"]).apply(null,arguments)};var ___getTypeName=Module["___getTypeName"]=function(){return(___getTypeName=Module["___getTypeName"]=Module["asm"]["__getTypeName"]).apply(null,arguments)};var ___embind_register_native_and_builtin_types=Module["___embind_register_native_and_builtin_types"]=function(){return(___embind_register_native_and_builtin_types=Module["___embind_register_native_and_builtin_types"]=Module["asm"]["__embind_register_native_and_builtin_types"]).apply(null,arguments)};var ___errno_location=Module["___errno_location"]=function(){return(___errno_location=Module["___errno_location"]=Module["asm"]["__errno_location"]).apply(null,arguments)};var _malloc=Module["_malloc"]=function(){return(_malloc=Module["_malloc"]=Module["asm"]["malloc"]).apply(null,arguments)};var _free=Module["_free"]=function(){return(_free=Module["_free"]=Module["asm"]["free"]).apply(null,arguments)};var stackSave=Module["stackSave"]=function(){return(stackSave=Module["stackSave"]=Module["asm"]["stackSave"]).apply(null,arguments)};var stackRestore=Module["stackRestore"]=function(){return(stackRestore=Module["stackRestore"]=Module["asm"]["stackRestore"]).apply(null,arguments)};var stackAlloc=Module["stackAlloc"]=function(){return(stackAlloc=Module["stackAlloc"]=Module["asm"]["stackAlloc"]).apply(null,arguments)};var calledRun;function ExitStatus(status){this.name="ExitStatus";this.message="Program terminated with exit("+status+")";this.status=status}dependenciesFulfilled=function runCaller(){if(!calledRun)run();if(!calledRun)dependenciesFulfilled=runCaller};function run(args){args=args||arguments_;if(runDependencies>0){return}preRun();if(runDependencies>0){return}function doRun(){if(calledRun)return;calledRun=true;Module["calledRun"]=true;if(ABORT)return;initRuntime();readyPromiseResolve(Module);if(Module["onRuntimeInitialized"])Module["onRuntimeInitialized"]();postRun()}if(Module["setStatus"]){Module["setStatus"]("Running...");setTimeout(function(){setTimeout(function(){Module["setStatus"]("")},1);doRun()},1)}else{doRun()}}Module["run"]=run;function procExit(code){EXITSTATUS=code;if(!keepRuntimeAlive()){if(Module["onExit"])Module["onExit"](code);ABORT=true}quit_(code,new ExitStatus(code))}if(Module["preInit"]){if(typeof Module["preInit"]=="function")Module["preInit"]=[Module["preInit"]];while(Module["preInit"].length>0){Module["preInit"].pop()()}}run();
+
+
+  return createSim.ready
+}
+);
+})();
+if (typeof exports === 'object' && typeof module === 'object')
+  module.exports = createSim;
+else if (typeof define === 'function' && define['amd'])
+  define([], function() { return createSim; });
+else if (typeof exports === 'object')
+  exports["createSim"] = createSim;
+
+</script>
+<script>
+
+// ---- WebAssembly engine: the real C++ simulator ---------------------------
+// Same interface as the JavaScript Market above, so the rest of the page
+// doesn't care which engine it's talking to.
+class WasmMarket {
+  constructor({ seed, maker, informedRate, horizon = 300 }) {
+    this.sim = new SimModule.WebSim(seed, maker, informedRate);
+    this.t = 0; this.horizon = horizon; this.samples = []; this.nextSample = 1;
+    this.makerId = 100; this._rate = informedRate;
+    const sim = this.sim;
+    this.book = {
+      get bestBid() { const v = sim.bestBid(); return Number.isNaN(v) ? -Infinity : v; },
+      get bestAsk() { const v = sim.bestAsk(); return Number.isNaN(v) ? Infinity : v; },
+      depth: (side, n) => sim.depth(side === 'buy', n),
+    };
+  }
+  get informedRate() { return this._rate; }
+  set informedRate(r) { this._rate = r; this.sim.setInformedRate(r); }
+  runTo(until) {
+    until = Math.min(until, this.horizon);
+    while (this.nextSample <= until) { this.sim.runTo(this.nextSample); this.sample(); this.nextSample++; }
+    this.sim.runTo(until);
+    this.t = until;
+    return until >= this.horizon;
+  }
+  sample() {
+    const s = this.sim;
+    this.samples.push({ t: this.nextSample, mid: s.mid(), fair: s.fair(),
+      noise: s.edgeNoise(), informed: s.edgeInformed(), inv: s.inventory(), pnl: s.pnl() });
+  }
+  pnl() { return this.sim.pnl(); }
+  inventory() { return this.sim.inventory(); }
+  averageRate() { return this.sim.averageRate(); }
+  dispose() { this.sim.delete(); }   // Embind objects live on the wasm heap and must be freed
+}
+let SimModule = null, engine = 'js';
+function makeMarket(opts) { return engine === 'wasm' ? new WasmMarket(opts) : new Market(opts); }
+
+// ---- Page -----------------------------------------------------------------
+function boot() {
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const state = {
+  maker: 'skewed', rate: 5, speed: 30, running: !reduced,
+  seed: 1, episode: 1, market: null, history: [],
+};
+
+window.sim = { get state() { return state; } };   // handle for the console
+
+function newEpisode() {
+  if (state.market && state.market.dispose) state.market.dispose();
+  state.market = makeMarket({ seed: state.seed++, maker: state.maker, informedRate: state.rate });
+  $('epNum').textContent = state.episode;
+}
+newEpisode();
+
+// Slider
+const rateEl = $('rate');
+function syncRate() {
+  state.rate = +rateEl.value;
+  state.market.informedRate = state.rate;
+  $('rateOut').firstChild.nodeValue = state.rate;
+  rateEl.style.setProperty('--fill', (state.rate / 20 * 100) + '%');
+}
+rateEl.addEventListener('input', syncRate);
+syncRate();
+
+document.querySelectorAll('input[name=maker]').forEach(r => r.addEventListener('change', e => {
+  state.maker = e.target.value; newEpisode(); drawAll();
+}));
+$('speed').addEventListener('change', e => state.speed = +e.target.value);
+$('play').addEventListener('click', () => {
+  state.running = !state.running;
+  $('play').textContent = state.running ? 'Pause' : 'Play';
+  last = performance.now();
+});
+$('play').textContent = state.running ? 'Pause' : 'Play';
+$('restart').addEventListener('click', () => { newEpisode(); drawAll(); });
+
+// ---- Canvas helpers -------------------------------------------------------
+function prep(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = +cv.getAttribute('height');
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+  }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+function niceTicks(lo, hi, n) {
+  const span = hi - lo || 1, raw = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => span / s <= n) || 10 * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+const fmt = v => {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(1) + 'm';
+  if (a >= 1e4) return (v / 1e3).toFixed(0) + 'k';
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+  return Math.round(v).toString();
+};
+function axes(ctx, w, h, x0, x1, y0, y1, pad, xLabel, yLabel = fmt) {
+  ctx.font = '11px Archivo, system-ui, sans-serif';
+  ctx.fillStyle = css('--muted'); ctx.strokeStyle = css('--rule'); ctx.lineWidth = 1;
+  const X = x => pad.l + (x - x0) / (x1 - x0 || 1) * (w - pad.l - pad.r);
+  const Y = y => h - pad.b - (y - y0) / (y1 - y0 || 1) * (h - pad.t - pad.b);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const t of niceTicks(y0, y1, 4)) {
+    const y = Math.round(Y(t)) + .5;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillText(yLabel(t), pad.l - 6, y);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const t of niceTicks(x0, x1, 5)) ctx.fillText(xLabel(t), X(t), h - pad.b + 5);
+  return { X, Y };
+}
+function line(ctx, pts, X, Y, color, width, dash) {
+  if (pts.length < 2) return;
+  ctx.strokeStyle = color; ctx.lineWidth = width; ctx.setLineDash(dash || []);
+  ctx.beginPath();
+  pts.forEach((p, i) => i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])));
+  ctx.stroke(); ctx.setLineDash([]);
+}
+const range = (arrs, padFrac, minSpan) => {
+  let lo = Infinity, hi = -Infinity;
+  for (const a of arrs) for (const v of a) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!isFinite(lo)) { lo = -1; hi = 1; }
+  if (hi - lo < minSpan) { const c = (hi + lo) / 2; lo = c - minSpan / 2; hi = c + minSpan / 2; }
+  const p = (hi - lo) * padFrac; return [lo - p, hi + p];
+};
+
+// ---- Drawing --------------------------------------------------------------
+function drawPrice() {
+  const { ctx, w, h } = prep($('price'));
+  const s = state.market.samples;
+  const [lo, hi] = range([s.map(d => d.mid), s.map(d => d.fair)], .08, 12);
+  const { X, Y } = axes(ctx, w, h, 0, 300, lo, hi, { l: 48, r: 8, t: 6, b: 20 }, t => t + 's', v => String(Math.round(v)));
+  line(ctx, s.map(d => [d.t, d.fair]), X, Y, css('--informed'), 1.6, [5, 4]);
+  line(ctx, s.map(d => [d.t, d.mid]), X, Y, css('--ink'), 1.6);
+}
+function drawEdge() {
+  const { ctx, w, h } = prep($('edge'));
+  const s = state.market.samples;
+  const [lo, hi] = range([s.map(d => d.noise), s.map(d => d.informed), s.map(d => d.noise + d.informed), [0]], .08, 2000);
+  const { X, Y } = axes(ctx, w, h, 0, 300, lo, hi, { l: 48, r: 8, t: 6, b: 20 }, t => t + 's');
+  ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(48, Math.round(Y(0)) + .5); ctx.lineTo(w - 8, Math.round(Y(0)) + .5); ctx.stroke();
+  line(ctx, s.map(d => [d.t, d.noise]), X, Y, css('--maker'), 2.2);
+  line(ctx, s.map(d => [d.t, d.informed]), X, Y, css('--informed'), 2.2);
+  line(ctx, s.map(d => [d.t, d.noise + d.informed]), X, Y, css('--ink'), 1.4);
+  const last = s[s.length - 1];
+  if (last) {
+    $('fNoise').textContent = fmt(last.noise);
+    $('fInf').textContent = fmt(last.informed);
+    $('fNet').textContent = fmt(last.noise + last.informed);
+    $('fInv').textContent = last.inv;
+  }
+}
+function drawInv() {
+  const { ctx, w, h } = prep($('inv'));
+  const s = state.market.samples;
+  const [lo, hi] = range([s.map(d => d.inv), [0]], .1, 100);
+  const { X, Y } = axes(ctx, w, h, 0, 300, lo, hi, { l: 48, r: 8, t: 6, b: 20 }, t => t + 's');
+  ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(48, Math.round(Y(0)) + .5); ctx.lineTo(w - 8, Math.round(Y(0)) + .5); ctx.stroke();
+  line(ctx, s.map(d => [d.t, d.inv]), X, Y, css('--maker'), 1.8);
+}
+function marker(ctx, kind, x, y, color) {
+  ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  if (kind === 'naive') { ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.stroke(); }
+  else if (kind === 'skewed') { ctx.rect(x - 4.5, y - 4.5, 9, 9); ctx.fill(); }
+  else { ctx.moveTo(x, y - 5.5); ctx.lineTo(x + 5, y + 4.5); ctx.lineTo(x - 5, y + 4.5); ctx.closePath(); ctx.fill(); }
+}
+function drawEpisodes() {
+  const { ctx, w, h } = prep($('eps'));
+  const hs = state.history;
+  const [lo, hi] = range([hs.map(e => e.pnl), [0]], .1, 4000);
+  const { X, Y } = axes(ctx, w, h, 0, 20, lo, hi, { l: 48, r: 10, t: 8, b: 20 }, t => t === 0 ? '0' : t + '/s');
+  ctx.strokeStyle = css('--muted'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(48, Math.round(Y(0)) + .5); ctx.lineTo(w - 10, Math.round(Y(0)) + .5); ctx.stroke();
+  const ink = css('--ink');
+  hs.forEach((e, i) => {
+    ctx.globalAlpha = i === hs.length - 1 ? 1 : .72;
+    marker(ctx, e.maker, X(e.rate), Y(e.pnl), ink);
+  });
+  ctx.globalAlpha = 1;
+  if (hs.length) {
+    const n = hs.length;
+    $('epsNote').textContent = `${n} episode${n === 1 ? '' : 's'} finished. Most recent: ${MAKERS[hs[n - 1].maker].label.toLowerCase()}, informed trader checking ${hs[n - 1].rate.toFixed(1)} times a second, profit ${fmt(hs[n - 1].pnl)}.`;
+  }
+}
+function drawBook() {
+  const m = state.market, b = m.book;
+  const asks = b.depth('sell', 8, m.makerId), bids = b.depth('buy', 8, m.makerId);
+  const maxQ = Math.max(1, ...asks.map(l => l.qty), ...bids.map(l => l.qty));
+  const row = (l, cls) => {
+    const full = l.qty / maxQ * 100, mine = l.mine / maxQ * 100;
+    const bg = cls === 'ask' ? 'var(--ask-soft)' : 'var(--maker-soft)';
+    return `<div class="row"><span class="p">${l.price}</span><span class="b"><i style="width:${full}%;background:${bg}"></i>${l.mine ? `<i style="width:max(4px, ${mine}%);background:var(--maker)"></i>` : ''}<em>${l.qty}</em></span></div>`;
+  };
+  $('asks').innerHTML = asks.slice().reverse().map(l => row(l, 'ask')).join('');
+  $('bids').innerHTML = bids.map(l => row(l, 'bid')).join('');
+  $('spread').textContent = isFinite(b.bestBid) && isFinite(b.bestAsk)
+    ? `Spread ${b.bestAsk - b.bestBid} tick${b.bestAsk - b.bestBid === 1 ? '' : 's'}` : 'One side empty';
+}
+function drawAll() {
+  drawPrice(); drawEdge(); drawInv(); drawEpisodes(); drawBook();
+  $('clock').textContent = Math.floor(state.market.t);
+}
+
+// ---- Loop -----------------------------------------------------------------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000);
+  last = now;
+  if (state.running) {
+    // Spend this frame's simulated time. Compare the budget against the time
+    // left in the episode rather than repeatedly subtracting (m.t + budget) - m.t:
+    // in floating point that difference can round to zero once m.t is large,
+    // leaving a residue that never shrinks and a loop that never ends.
+    let budget = dt * state.speed;
+    for (let guard = 0; guard < 20 && budget > 1e-9; guard++) {
+      const m = state.market, left = m.horizon - m.t;
+      if (budget < left) { m.runTo(m.t + budget); break; }
+      m.runTo(m.horizon);
+      budget -= left;
+      state.history.push({ maker: state.maker, rate: m.averageRate(), pnl: m.pnl() });
+      if (state.history.length > 400) state.history.shift();
+      state.episode++;
+      newEpisode();
+    }
+  }
+  drawAll();
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', drawAll);
+requestAnimationFrame(frame);
+}
+
+// Load the WebAssembly engine, falling back to the JavaScript port if it can't
+// run. Emscripten's loader can throw synchronously, reject, or (if a host's
+// security policy blocks compilation) never settle, so all three are handled.
+function loadEngine() {
+  return new Promise(resolve => {
+    if (typeof WebAssembly !== 'object') return resolve(null);
+    let settled = false;
+    const finish = m => { if (!settled) { settled = true; clearTimeout(timer); resolve(m); } };
+    const timer = setTimeout(() => finish(null), 5000);
+    try { createSim().then(finish, () => finish(null)); }
+    catch (e) { finish(null); }
+  });
+}
+loadEngine().then(M => {
+  if (M) { SimModule = M; engine = 'wasm'; }
+  document.getElementById('engine').textContent = engine === 'wasm'
+    ? 'Engine: the C++ simulator, compiled to WebAssembly'
+    : 'Engine: JavaScript port (WebAssembly unavailable here)';
+  boot();
+});
+</script>
+</body>
+</html>

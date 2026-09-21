@@ -21,17 +21,26 @@ void Market::add_agent(std::unique_ptr<Agent> a) {
     agents_.push_back(std::move(a));
 }
 
-void Market::run(double duration) {
+void Market::start() {
+    if (started_) return;
+    started_ = true;
     // Seed: every agent gets a first action time drawn from its own
     // distribution, so they don't all fire at t = 0.
     for (size_t i = 0; i < agents_.size(); ++i) {
         queue_.push(SimEvent{agents_[i]->next_delay(rng_), i});
     }
+}
 
-    while (!queue_.empty()) {
+void Market::run(double duration) { run_until(duration); }
+
+void Market::run_until(double until) {
+    start();
+    // Peek before popping. Popping first and then discovering the event is
+    // past `until` would throw that event away, and its agent would never be
+    // rescheduled. Harmless for a single run, fatal when called repeatedly.
+    while (!queue_.empty() && queue_.top().time <= until) {
         SimEvent e = queue_.top();
         queue_.pop();
-        if (e.time > duration) break;
 
         // Advance the world to this moment before the agent sees it.
         double dt = e.time - now_;
@@ -162,4 +171,18 @@ void Market::dump_prices(const std::string& path) const {
     out << "t,mid\n";
     for (size_t i = 0; i < price_series_.size(); ++i)
         out << (i + 1) * price_dt_ << ',' << price_series_[i] << '\n';
+}
+
+std::vector<DepthLevel> Market::depth(Side side, size_t n) const {
+    std::vector<DepthLevel> out;
+    book_.for_each_level(side, n, [&](int64_t price, const std::list<Order>& orders) {
+        DepthLevel l{price, 0, 0};
+        for (const Order& o : orders) {
+            l.qty += o.quantity;
+            auto it = order_owner_.find(o.id);
+            if (it != order_owner_.end() && it->second.agent_id == maker_id_) l.mine += o.quantity;
+        }
+        out.push_back(l);
+    });
+    return out;
 }
