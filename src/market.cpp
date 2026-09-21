@@ -22,8 +22,8 @@ void Market::add_agent(std::unique_ptr<Agent> a) {
 }
 
 void Market::run(double duration) {
-    // Seed: every agent gets a first action time from its own distribution,
-    // so they don't all fire at t = 0.
+    // Seed: every agent gets a first action time drawn from its own
+    // distribution, so they don't all fire at t = 0.
     for (size_t i = 0; i < agents_.size(); ++i) {
         queue_.push(SimEvent{agents_[i]->next_delay(rng_), i});
     }
@@ -38,24 +38,36 @@ void Market::run(double duration) {
         now_ = e.time;
         step_fundamental(dt);
 
+        // Snapshot the mid at every fixed time step we've crossed. Done before
+        // the agent acts, so the sample reflects the book as it stood.
+        while (price_dt_ > 0.0 && next_price_t_ <= now_) {
+            price_series_.push_back(mid_price());
+            next_price_t_ += price_dt_;
+        }
+
         agents_[e.agent_index]->act(*this);
 
         // Reschedule AFTER acting, from the updated clock.
         queue_.push(SimEvent{now_ + agents_[e.agent_index]->next_delay(rng_),
                              e.agent_index});
 
+        // Sample the state periodically rather than every event.
+        if (tracked_ != 0) {
+            inv_abs_sum_ += std::abs(static_cast<double>(positions_[tracked_].inventory));
+            ++inv_samples_;
+        }
         if (++event_count_ % 100 == 0) {
             const Position& p = positions_[tracked_];
             log_.push_back({now_, mid_price(), fundamental_,
-                static_cast<double>(p.inventory),
-                p.cash + p.inventory * fundamental_});
+                            static_cast<double>(p.inventory),
+                            p.cash + p.inventory * mid_price()});
         }
     }
 }
 
 uint64_t Market::submit(Order o, uint64_t agent_id) {
     o.id = next_order_id_++;
-    order_owner_[o.id] = OrderInfo{agent_id, o.side};
+    order_owner_[o.id] = OrderInfo{agent_id, o.side};   // so on_trade knows who and which side
     book_.add_order(o);
     return o.id;
 }
@@ -95,8 +107,6 @@ void Market::on_trade(uint64_t resting_id, uint64_t incoming_id,
     int64_t q = static_cast<int64_t>(qty);
 
     // A buyer gains inventory and pays cash; the seller is the mirror image.
-    // Both legs must move or the books won't balance and every P&L figure
-    // downstream will be wrong.
     if (incoming_is_buy) {
         positions_[incoming_agent].inventory += q;
         positions_[incoming_agent].cash      -= notional;
@@ -108,6 +118,16 @@ void Market::on_trade(uint64_t resting_id, uint64_t incoming_id,
         positions_[resting_agent].inventory  += q;
         positions_[resting_agent].cash       -= notional;
     }
+
+    // --- Adverse selection attribution ---------------------------------
+    // Total P&L mixes two different things: what the maker earns from
+    // uninformed flow, and what it loses to informed flow. Here we split
+    // them by looking at who was on the other side of each fill.
+    //
+    // A fill is valued against the fundamental, not the trade price: buying
+    // at 10099 when fair value is 10110 is a gain of 11 per unit, whether or
+    // not the mid has caught up yet. That is exactly what adverse selection
+    // costs, and marking to the mid would hide it.
     if (maker_id_ != 0 && (incoming_agent == maker_id_ || resting_agent == maker_id_)) {
         uint64_t other = (incoming_agent == maker_id_) ? resting_agent : incoming_agent;
         bool maker_bought = (incoming_agent == maker_id_) ? incoming_is_buy : !incoming_is_buy;
@@ -135,4 +155,11 @@ void Market::dump_csv(const std::string& path) const {
         out << row[0] << ',' << row[1] << ',' << row[2] << ','
             << row[3] << ',' << row[4] << '\n';
     }
+}
+
+void Market::dump_prices(const std::string& path) const {
+    std::ofstream out(path);
+    out << "t,mid\n";
+    for (size_t i = 0; i < price_series_.size(); ++i)
+        out << (i + 1) * price_dt_ << ',' << price_series_[i] << '\n';
 }
