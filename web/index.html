@@ -629,7 +629,11 @@ $('restart').addEventListener('click', () => { newEpisode(); drawAll(); });
 // ---- Canvas helpers -------------------------------------------------------
 function prep(cv) {
   const dpr = window.devicePixelRatio || 1;
-  const w = cv.clientWidth, h = +cv.getAttribute('height');
+  // Read the intended display height once and keep it. Setting cv.height below
+  // also rewrites the height attribute, so reading the attribute every frame
+  // would compound by the pixel ratio on high-density screens.
+  if (!cv.dataset.h) cv.dataset.h = cv.getAttribute('height');
+  const w = cv.clientWidth, h = +cv.dataset.h;
   if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
     cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
   }
@@ -808,8 +812,8 @@ function loadEngine() {
 loadEngine().then(M => {
   if (M) { SimModule = M; engine = 'wasm'; }
   document.getElementById('engine').textContent = engine === 'wasm'
-    ? 'Engine: the C++ simulator, compiled to WebAssembly'
-    : 'Engine: JavaScript port (WebAssembly unavailable here)';
+    ? 'Running the C++ engine (WebAssembly)'
+    : 'Running the JavaScript port';
   boot();
 });
 </script>
