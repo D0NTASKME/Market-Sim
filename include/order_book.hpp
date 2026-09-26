@@ -28,6 +28,13 @@ public:
         index_.erase(f); return true;
     }
     std::optional<int64_t> best_bid() const { if (bids_.empty()) return std::nullopt; return bids_.begin()->first; }
+    // The live resting remainder of an order, if it is still in the book.
+    std::optional<Order> resting(uint64_t id) const {
+        auto f = index_.find(id);
+        if (f == index_.end()) return std::nullopt;
+        return *f->second.it;
+    }
+
     // Visit up to n non-empty levels from the best price outward.
     template <typename F>
     void for_each_level(Side side, size_t n, F&& f) const {

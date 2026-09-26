@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")/.."
 em++ -std=c++20 -O2 -Iinclude \
-    src/market.cpp src/agents/*.cpp web/bindings.cpp \
+    src/market.cpp src/config.cpp src/build.cpp src/agents/*.cpp web/bindings.cpp \
     --bind \
     -sSINGLE_FILE=1 -sMODULARIZE=1 -sEXPORT_NAME=createSim \
     -sALLOW_MEMORY_GROWTH=1 -sENVIRONMENT=web,node \

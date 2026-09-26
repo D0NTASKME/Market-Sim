@@ -9,13 +9,13 @@ void MarketMaker::cancel_quotes(Market& market) {
 }
 
 double MarketMaker::reference_price(Market& market) { return market.mid_price(); }
-double MarketMaker::half_spread(Market&) { return static_cast<double>(half_spread_); }
+double MarketMaker::half_spread(Market&) { return half_spread_; }
 
 void MarketMaker::act(Market& market) {
     cancel_quotes(market);
 
     double ref = reference_price(market);
-    double hs  = std::max(1.0, half_spread(market));   // never quote inside one tick
+    double hs  = std::max(0.5, half_spread(market));   // 0.5 = join the touch in a one-tick market
     int64_t inv = market.position(id_).inventory;
 
     int64_t bid = static_cast<int64_t>(std::floor(ref - hs));

@@ -6,7 +6,7 @@
 
 class MarketMaker : public Agent {
 public:
-    MarketMaker(uint64_t id, double rate, int64_t half_spread,
+    MarketMaker(uint64_t id, double rate, double half_spread,
                 uint32_t quote_size, int64_t max_inventory)
         : Agent(id), rate_(rate), half_spread_(half_spread),
           quote_size_(quote_size), max_inventory_(max_inventory) {}
@@ -24,7 +24,7 @@ protected:
     virtual double half_spread(Market& market);
 
     double rate_;
-    int64_t half_spread_;
+    double half_spread_;
     uint32_t quote_size_;
     int64_t max_inventory_;
 
@@ -36,7 +36,7 @@ private:
 // Hand-tuned inventory skew: shift quotes against the position.
 class SkewedMarketMaker : public MarketMaker {
 public:
-    SkewedMarketMaker(uint64_t id, double rate, int64_t half_spread,
+    SkewedMarketMaker(uint64_t id, double rate, double half_spread,
                       uint32_t quote_size, int64_t max_inventory, double skew_per_unit)
         : MarketMaker(id, rate, half_spread, quote_size, max_inventory),
           skew_per_unit_(skew_per_unit) {}

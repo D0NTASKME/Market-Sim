@@ -54,6 +54,17 @@ void Market::run_until(double until) {
             next_price_t_ += price_dt_;
         }
 
+        // Features are sampled before the agent acts, from state the maker
+        // could see. The target (fundamental - mid) is recorded alongside but
+        // is never an input.
+        recent_mids_.push_back({now_, mid_price()});
+        while (!recent_mids_.empty() && recent_mids_.front().first < now_ - 5.0) recent_mids_.pop_front();
+        while (!recent_trades_.empty() && recent_trades_.front().first < now_ - 5.0) recent_trades_.pop_front();
+        while (feature_dt_ > 0.0 && next_feature_t_ <= now_) {
+            features_.push_back(snapshot_features());
+            next_feature_t_ += feature_dt_;
+        }
+
         agents_[e.agent_index]->act(*this);
 
         // Reschedule AFTER acting, from the updated clock.
@@ -77,12 +88,29 @@ void Market::run_until(double until) {
 uint64_t Market::submit(Order o, uint64_t agent_id) {
     o.id = next_order_id_++;
     order_owner_[o.id] = OrderInfo{agent_id, o.side};   // so on_trade knows who and which side
-    book_.add_order(o);
+    book_.add_order(o);   // any executions are logged from on_trade
+    // In LOBSTER only the part that rests appears as a new-order message;
+    // the marketable part shows up as executions of the orders it hit.
+    if (lob_msg_) {
+        if (auto r = book_.resting(o.id)) lob_log(1, o.id, r->quantity, r->price_ticks, r->side);
+    }
+    return o.id;
+}
+
+uint64_t Market::submit_ioc(Order o, uint64_t agent_id) {
+    o.id = next_order_id_++;
+    order_owner_[o.id] = OrderInfo{agent_id, o.side};
+    book_.add_order(o);                                    // executions logged from on_trade
+    if (book_.resting(o.id)) book_.cancel_order(o.id);     // drop the remainder, unlogged
     return o.id;
 }
 
 bool Market::cancel(uint64_t order_id) {
-    return book_.cancel_order(order_id);
+    std::optional<Order> r;
+    if (lob_msg_) r = book_.resting(order_id);
+    bool ok = book_.cancel_order(order_id);
+    if (ok && r) lob_log(3, order_id, r->quantity, r->price_ticks, r->side);
+    return ok;
 }
 
 double Market::mid_price() const {
@@ -114,6 +142,26 @@ void Market::on_trade(uint64_t resting_id, uint64_t incoming_id,
 
     double notional = static_cast<double>(price) * qty;
     int64_t q = static_cast<int64_t>(qty);
+
+    // Count distinct aggressive orders from informed traders that traded.
+    if (informed_ids_.count(incoming_agent) && incoming_id != last_informed_order_) {
+        ++informed_trades_;
+        last_informed_order_ = incoming_id;
+    }
+
+    if (lob_msg_) {
+        Side resting_side = incoming_is_buy ? Side::Sell : Side::Buy;
+        lob_log(4, resting_id, qty, price, resting_side, resting_side, price, qty);
+    }
+
+    last_trade_time_ = now_;
+    last_trade_sign_ = incoming_is_buy ? 1 : -1;
+
+    // Order flow as the market sees it: which side was aggressive, and how much.
+    double signed_q = incoming_is_buy ? q : -q;
+    recent_trades_.push_back({now_, signed_q});
+    recent_signs_.push_back(incoming_is_buy ? 1 : -1);
+    if (recent_signs_.size() > 10) recent_signs_.pop_front();
 
     // A buyer gains inventory and pays cash; the seller is the mirror image.
     if (incoming_is_buy) {
@@ -185,4 +233,67 @@ std::vector<DepthLevel> Market::depth(Side side, size_t n) const {
         out.push_back(l);
     });
     return out;
+}
+
+FeatureRow Market::snapshot_features() {
+    FeatureRow f{};
+    f.t = now_;
+    double mid = mid_price();
+    for (const auto& [t, q] : recent_trades_) {
+        f.ofi_5s += q;
+        if (t >= now_ - 1.0) f.ofi_1s += q;
+    }
+    for (int s : recent_signs_) f.trade_signs_10 += s;
+
+    auto bids = depth(Side::Buy, 1), asks = depth(Side::Sell, 1);
+    double bq = bids.empty() ? 0.0 : static_cast<double>(bids[0].qty);
+    double aq = asks.empty() ? 0.0 : static_cast<double>(asks[0].qty);
+    f.book_imbalance = (bq + aq) > 0 ? (bq - aq) / (bq + aq) : 0.0;
+    f.spread = (!bids.empty() && !asks.empty()) ? static_cast<double>(asks[0].price - bids[0].price) : 0.0;
+
+    // recent_mids_ holds (time, mid) for the last 5 seconds, oldest first.
+    double mid_5s = recent_mids_.empty() ? mid : recent_mids_.front().second;
+    double mid_1s = mid;
+    for (const auto& [t, m] : recent_mids_) if (t >= now_ - 1.0) { mid_1s = m; break; }
+    f.dmid_1s = mid - mid_1s;
+    f.dmid_5s = mid - mid_5s;
+
+    f.maker_inventory = maker_id_ ? static_cast<double>(positions_[maker_id_].inventory) : 0.0;
+    f.mid = mid;
+    f.target = fundamental_ - mid;
+    return f;
+}
+
+void Market::enable_lobster_log(const std::string& prefix, int levels) {
+    lob_levels_ = levels;
+    lob_msg_  = std::make_unique<std::ofstream>(prefix + "_message_" + std::to_string(levels) + ".csv");
+    lob_book_ = std::make_unique<std::ofstream>(prefix + "_orderbook_" + std::to_string(levels) + ".csv");
+    lob_msg_->precision(10);
+}
+
+void Market::lob_log(int type, uint64_t id, uint32_t size, int64_t price, Side side,
+                     Side adjust_side, int64_t adjust_price, uint32_t adjust_qty) {
+    const double t = 34200.0 + now_;               // seconds after midnight, from 09:30
+    const int dir = side == Side::Buy ? 1 : -1;
+    *lob_msg_ << t << ',' << type << ',' << id << ',' << size << ',' << price * 100 << ',' << dir << '\n';
+
+    auto asks = depth(Side::Sell, lob_levels_ + 1);
+    auto bids = depth(Side::Buy,  lob_levels_ + 1);
+    if (adjust_qty > 0) {                          // apply the pending fill
+        auto& lv = adjust_side == Side::Sell ? asks : bids;
+        for (size_t i = 0; i < lv.size(); ++i) {
+            if (lv[i].price != adjust_price) continue;
+            lv[i].qty -= adjust_qty;
+            if (lv[i].qty <= 0) lv.erase(lv.begin() + static_cast<long>(i));
+            break;
+        }
+    }
+    std::ostream& ob = *lob_book_;
+    for (int l = 0; l < lob_levels_; ++l) {
+        const size_t i = static_cast<size_t>(l);
+        if (i < asks.size()) ob << asks[i].price * 100 << ',' << asks[i].qty; else ob << "9999999999,0";
+        ob << ',';
+        if (i < bids.size()) ob << bids[i].price * 100 << ',' << bids[i].qty; else ob << "-9999999999,0";
+        ob << (l + 1 < lob_levels_ ? ',' : '\n');
+    }
 }

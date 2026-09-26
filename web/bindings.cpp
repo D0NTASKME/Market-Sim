@@ -3,7 +3,10 @@
 // Nothing here re-implements the model: it builds the same agents with the
 // same parameters as main.cpp and hands the page a handle to step and read.
 
+#include "build.hpp"
+#include "config.hpp"
 #include "market.hpp"
+#include "agents/calibrated.hpp"
 #include "agents/informed_trader.hpp"
 #include "agents/market_maker.hpp"
 #include "agents/noise_trader.hpp"
@@ -12,6 +15,7 @@
 #include <emscripten/val.h>
 
 #include <memory>
+#include <sstream>
 #include <random>
 #include <string>
 
@@ -41,13 +45,52 @@ private:
     double rate_;
 };
 
+// Same thinning trick for the calibrated informed trader, so the slider can
+// change its rate while the market runs.
+class TunableCalibratedInformed : public CalibratedInformed {
+public:
+    TunableCalibratedInformed(uint64_t id, double max_rate, double threshold,
+                              Quantiles sizes, int64_t cap, double rate)
+        : CalibratedInformed(id, max_rate, threshold, std::move(sizes), cap),
+          max_rate_(max_rate), rate_(rate) {}
+    void set_rate(double r) { rate_ = r; }
+    void act(Market& market) override {
+        std::uniform_real_distribution<double> u(0.0, 1.0);
+        if (u(market.rng()) < rate_ / max_rate_) CalibratedInformed::act(market);
+    }
+private:
+    double max_rate_, rate_;
+};
+
 class WebSim {
 public:
     static constexpr uint64_t MAKER = 100;
     static constexpr uint64_t INFORMED = 200;
 
+    // Build from a config file's text: the same settings the command-line
+    // simulator uses, including ones calibrated to real market data.
+    WebSim(const std::string& config_text, int seed, double informed_rate)
+        : market_(*[&] {
+              std::istringstream in(config_text);
+              cfg_ = SimConfig::parse(in);
+              cfg_.seed = static_cast<uint32_t>(seed);
+              max_informed_ = std::max(1.0, cfg_.informed_rate);
+              cfg_.informed_rate = 0.0;      // added below, in a tunable form
+              built_ = build_market(cfg_);
+              return built_.get();
+          }()),
+          rate_(informed_rate) {
+        auto inf = std::make_unique<TunableCalibratedInformed>(INFORMED, max_informed_,
+            cfg_.informed_threshold, Quantiles(cfg_.trade_size_quantiles), cfg_.informed_cap, rate_);
+        calibrated_informed_ = inf.get();
+        market_.add_agent(std::move(inf));
+        market_.set_informed(INFORMED);
+        horizon_ = cfg_.duration;
+    }
+
     WebSim(int seed, const std::string& maker, double informed_rate)
-        : market_(static_cast<uint32_t>(seed), 10100.0, 2.0), rate_(informed_rate) {
+        : built_(std::make_unique<Market>(static_cast<uint32_t>(seed), 10100.0, 2.0)),
+          market_(*built_), rate_(informed_rate) {
         for (uint64_t i = 1; i <= 10; ++i)
             market_.add_agent(std::make_unique<NoiseTrader>(i, 2.0, 5, 100));
 
@@ -74,7 +117,13 @@ public:
         t_ = t;
     }
 
-    void set_informed_rate(double r) { rate_ = r; informed_->set_rate(r); }
+    void set_informed_rate(double r) {
+        rate_ = r;
+        if (informed_) informed_->set_rate(r);
+        if (calibrated_informed_) calibrated_informed_->set_rate(r);
+    }
+    double horizon() const { return horizon_; }
+    double max_informed_rate() const { return max_informed_; }
 
     double time() const          { return t_; }
     double average_rate() const  { return t_ > 0 ? rate_time_ / t_ : rate_; }
@@ -104,8 +153,14 @@ public:
     }
 
 private:
-    Market market_;
+    SimConfig cfg_;
+    std::unique_ptr<Market> built_;               // used when built from a config
+    Market market_unused_{0, 0.0, 0.0};
+    Market& market_;
     TunableInformedTrader* informed_ = nullptr;   // owned by market_
+    TunableCalibratedInformed* calibrated_informed_ = nullptr;
+    double max_informed_ = 20.0;
+    double horizon_ = 300.0;
     double rate_;
     double t_ = 0.0;
     double rate_time_ = 0.0;
@@ -113,7 +168,9 @@ private:
 
 EMSCRIPTEN_BINDINGS(market_sim) {
     emscripten::class_<WebSim>("WebSim")
-        .constructor<int, const std::string&, double>()
+        .constructor<const std::string&, int, double>()
+        .function("horizon", &WebSim::horizon)
+        .function("maxInformedRate", &WebSim::max_informed_rate)
         .function("runTo", &WebSim::run_to)
         .function("setInformedRate", &WebSim::set_informed_rate)
         .function("time", &WebSim::time)
