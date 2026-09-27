@@ -17,7 +17,7 @@ framework are complete and tested. The model reproduces a real book's shape but 
 speed of its price response — a gap that is measured, explained, and being worked on.
 See [Roadmap](#roadmap).
 
-Live demo (the C++ engine compiled to WebAssembly, running in the browser): *[link]*
+Live demo (the C++ engine compiled to WebAssembly, running in the browser): *[https://market-sim-two.vercel.app/]*
 
 ---
 
